@@ -5,7 +5,7 @@ export function Input({
   className = "",
 }: {
   placeholder: string;
-  reference?: React.RefObject<HTMLInputElement>;
+  reference?: React.RefObject<HTMLInputElement | null>;
   type?: string;
   className?: string;
 }) {
