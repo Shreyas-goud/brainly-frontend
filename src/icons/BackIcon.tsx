@@ -5,7 +5,7 @@ export function BackIcon({ className = "" }: { className?: string }) {
 
   return (
     <svg
-      onClick={() => navigate(-1)}
+      onClick={() => navigate("/")}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") navigate(-1);
       }}
