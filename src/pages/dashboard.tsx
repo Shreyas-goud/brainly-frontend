@@ -11,7 +11,16 @@ import axios from "axios";
 
 export function Dashboard() {
   const [modalOpen, setModalOpen] = useState(false);
-  const { contents, refresh } = useContent();
+  type Content = {
+    type: "twitter" | "youtube";
+    link: string;
+    title: string;
+  };
+
+  const { contents, refresh } = useContent() as {
+    contents: Content[];
+    refresh: () => void;
+  };
   const [filter, setFilter] = useState<"all" | "twitter" | "youtube">("all");
 
   useEffect(() => {
