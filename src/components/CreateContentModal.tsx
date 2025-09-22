@@ -5,10 +5,12 @@ import { Input } from "./Input";
 import { BACKEND_URL } from "../config";
 import axios from "axios";
 
-enum ContentType {
-  Youtube = "youtube",
-  Twitter = "twitter",
-}
+const ContentType = {
+  Youtube: "youtube",
+  Twitter: "twitter",
+} as const;
+
+type ContentTypeType = (typeof ContentType)[keyof typeof ContentType];
 
 interface CreateContentModalProps {
   open: boolean;
@@ -18,7 +20,7 @@ interface CreateContentModalProps {
 export function CreateContentModal({ open, onClose }: CreateContentModalProps) {
   const titleRef = useRef<HTMLInputElement>(null);
   const linkRef = useRef<HTMLInputElement>(null);
-  const [type, setType] = useState(ContentType.Youtube);
+  const [type, setType] = useState<ContentTypeType>(ContentType.Youtube);
 
   async function addContent() {
     const title = titleRef.current?.value?.trim();

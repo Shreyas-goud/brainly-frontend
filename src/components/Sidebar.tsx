@@ -2,14 +2,12 @@ import { Logo } from "../icons/Logo";
 import { TwitterIcon } from "../icons/TwitterIcon";
 import { YoutubeIcon } from "../icons/YoutubeIcon";
 import { BackIcon } from "../icons/BackIcon";
-import { useNavigate } from "react-router-dom";
 
 interface SidebarProps {
   onFilterChange: (filter: "all" | "twitter" | "youtube") => void;
 }
 
 export function Sidebar({ onFilterChange }: SidebarProps) {
-  const navigate = useNavigate();
   return (
     <div className="fixed left-0 top-0 h-screen w-24 md:w-64 bg-white shadow-md flex flex-col items-center md:items-start p-4">
       <div
