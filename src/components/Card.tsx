@@ -48,6 +48,7 @@ export function Card({
   onToggleSelect,
 }: CardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const confirm = useConfirm();
 
   const sourceType = normalizeSourceType({ type, sourceType: sourceTypeProp as never });
@@ -64,11 +65,12 @@ export function Card({
     });
     if (!ok) return;
     setIsDeleting(true);
+    setActionError(null);
     try {
       await api.delete("/api/v1/content", { data: { contentId: _id } });
       onDelete?.();
     } catch (err) {
-      alert(normalizeError(err).message);
+      setActionError(normalizeError(err).message);
     } finally {
       setIsDeleting(false);
     }
@@ -148,6 +150,19 @@ export function Card({
           </div>
         )}
       </div>
+
+      {/* Inline action error (e.g. a failed delete) — replaces a blocking alert() */}
+      {actionError && (
+        <div className="mx-5 mb-3 flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-100 text-red-700 text-xs">
+          <span className="min-w-0 truncate">{actionError}</span>
+          <button
+            onClick={() => setActionError(null)}
+            className="shrink-0 font-semibold hover:text-red-800"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Card Body — renderer chosen by sourceType */}
       <div className="px-5 pb-5 flex-1">

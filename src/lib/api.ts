@@ -146,8 +146,9 @@ export function normalizeError(error: unknown): AppError {
 }
 
 export function warmupBackend(): void {
+  // Hit the real health route — there is no "/" handler on the backend.
   api
-    .get("/", { timeout: 60_000, validateStatus: () => true })
+    .get("/healthz", { timeout: 60_000, validateStatus: () => true })
     .catch(() => {
       /* warmup is fire-and-forget */
     });

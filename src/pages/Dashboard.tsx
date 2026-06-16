@@ -72,6 +72,7 @@ export function Dashboard() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedCollectionIds, setSelectedCollectionIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const confirm = useConfirm();
 
   // Refetch only when the add-content modal closes after being opened.
@@ -183,6 +184,7 @@ export function Dashboard() {
     });
     if (!ok) return;
     setBulkDeleting(true);
+    setActionError(null);
     try {
       await Promise.all([
         selectedIds.size > 0
@@ -195,7 +197,7 @@ export function Dashboard() {
       exitSelection();
       refresh();
     } catch (err) {
-      alert(normalizeError(err).message);
+      setActionError(normalizeError(err).message);
     } finally {
       setBulkDeleting(false);
     }
@@ -346,6 +348,19 @@ export function Dashboard() {
                 className="shrink-0 px-3 py-1.5 text-sm font-semibold rounded-lg bg-white border border-red-200 text-red-700 hover:bg-red-100 transition-colors disabled:opacity-50"
               >
                 {loading ? "Retrying…" : "Try again"}
+              </button>
+            </div>
+          )}
+
+          {/* Action error (e.g. a failed bulk delete) — replaces a blocking alert() */}
+          {actionError && (
+            <div className="mb-8 p-4 bg-red-50 border border-red-100 text-red-800 rounded-2xl flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
+              <span className="flex-1">{actionError}</span>
+              <button
+                onClick={() => setActionError(null)}
+                className="shrink-0 px-3 py-1.5 text-sm font-semibold rounded-lg bg-white border border-red-200 text-red-700 hover:bg-red-100 transition-colors"
+              >
+                Dismiss
               </button>
             </div>
           )}
