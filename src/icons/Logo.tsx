@@ -1,10 +1,17 @@
-export function Logo() {
+export function Logo({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
+  const sizeMap = {
+    sm: "32",
+    md: "56",
+    lg: "84",
+  };
+  const dimensions = sizeMap[size];
+
   return (
     <svg
       fill="currentColor"
       stroke="currentColor"
-      width="56"
-      height="56"
+      width={dimensions}
+      height={dimensions}
       version="1.1"
       id="Layer_1"
       xmlns="http://www.w3.org/2000/svg"

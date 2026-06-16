@@ -1,5 +1,3 @@
-// frontend/pages/LandingPage.jsx
-
 import { Logo } from "../icons/Logo";
 import { ShareIcon } from "../icons/ShareIcon";
 import { YoutubeIcon } from "../icons/YoutubeIcon";

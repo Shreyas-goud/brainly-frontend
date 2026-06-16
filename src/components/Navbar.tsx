@@ -1,26 +1,22 @@
-// frontend/components/Navbar.jsx
-
 import { Logo } from "../icons/Logo";
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../lib/auth/AuthContext";
 
 export function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  const { isAuthenticated, signOut } = useAuth();
   const navigate = useNavigate();
 
-  // Detect scroll for shadow
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 10);
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Check auth state
-  const isAuthenticated = Boolean(localStorage.getItem("token"));
-
   function handleLogout() {
-    localStorage.removeItem("token");
+    signOut();
     setMenuOpen(false);
     navigate("/");
   }

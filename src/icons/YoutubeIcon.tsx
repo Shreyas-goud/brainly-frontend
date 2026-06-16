@@ -1,10 +1,11 @@
-export function YoutubeIcon() {
+export function YoutubeIcon({ className }: { className?: string } = {}) {
   return (
     <svg
       fill="currentColor"
       stroke="currentColor"
       width="24"
       height="24"
+      className={className}
       xmlns="http://www.w3.org/2000/svg"
       shapeRendering="geometricPrecision"
       textRendering="geometricPrecision"
