@@ -10,7 +10,6 @@ import { type Content, type Collection } from "../hooks/useContent";
 import { getChannelConfig, type ChannelId } from "../lib/channels";
 
 type SharedBrain = {
-  email: string;
   channels?: string[];
   content: Content[];
   collections?: Collection[];
@@ -72,8 +71,7 @@ export function ShareView() {
           {data && (
             <div className="text-right">
               <span className="block text-sm text-gray-500">
-                Shared by{" "}
-                <span className="font-semibold text-gray-700">{data.email}</span>
+                Shared with you
               </span>
               {data.channels && data.channels.length > 0 && (
                 <span className="block text-xs text-gray-400 mt-0.5">
