@@ -1,79 +1,112 @@
-import { useState } from "react";
-import { CrossIcon } from "../icons/CrossIcon";
-import { Button } from "./Button";
-import { Input } from "./Input";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { ClipboardPaste, Link2, ListVideo } from "lucide-react";
+import { Dialog, DialogFooter, DialogHeader } from "./ui/Dialog";
+import { Button } from "./ui/Button";
+import { Field } from "./ui/Field";
+import { SourceIcon } from "./ui/SourceIcon";
+import { Kbd } from "./ui/Spinner";
 import { api, normalizeError } from "../lib/api";
 import { detectSourceType, isYouTubePlaylist, type SourceType } from "../lib/urlDetector";
 import { getChannelConfig } from "../lib/channels";
+import { saveLink } from "../lib/recall";
+import type { Content } from "../hooks/useContent";
 
 interface CreateContentModalProps {
   open: boolean;
   onClose: () => void;
+  /** A link handed over from the landing page or a share. */
+  initialLink?: string;
+  /** Called with the saved item (absent for playlists, which save many). */
+  onSaved?: (result: { content?: Content; duplicate?: boolean; playlist?: boolean }) => void;
 }
 
-export function CreateContentModal({ open, onClose }: CreateContentModalProps) {
+function looksLikeUrl(value: string): boolean {
+  try {
+    const u = new URL(value);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function firstUrl(text: string): string | null {
+  const m = text.match(/https?:\/\/[^\s<>"']+/i);
+  return m ? m[0].replace(/[).,!?]+$/, "") : null;
+}
+
+export function CreateContentModal({ open, onClose, initialLink, onSaved }: CreateContentModalProps) {
   const [link, setLink] = useState("");
   const [title, setTitle] = useState("");
-  const [detectedType, setDetectedType] = useState<SourceType | null>(null);
-  const [isPlaylist, setIsPlaylist] = useState(false);
+  const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const linkRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setLink(initialLink ?? "");
+    setTitle("");
+    setNote("");
+    setError(null);
+  }, [open, initialLink]);
+
+  const trimmed = link.trim();
+  const valid = looksLikeUrl(trimmed);
+  const detected: SourceType | null = valid ? detectSourceType(trimmed) : null;
+  const isPlaylist = valid && isYouTubePlaylist(trimmed);
+  const detectedChannel = detected ? getChannelConfig(detected) : null;
+  const canPaste = typeof navigator !== "undefined" && Boolean(navigator.clipboard?.readText);
 
   function handleClose() {
-    setLink("");
-    setTitle("");
-    setDetectedType(null);
-    setIsPlaylist(false);
-    setError(null);
+    if (submitting) return;
     onClose();
   }
 
-  function handleLinkChange(value: string) {
-    setLink(value);
-    const trimmed = value.trim();
-    if (!trimmed) {
-      setDetectedType(null);
-      setIsPlaylist(false);
-      return;
+  async function paste() {
+    try {
+      const text = await navigator.clipboard.readText();
+      const url = firstUrl(text) ?? text.trim();
+      setLink(url);
+      setError(null);
+    } catch {
+      linkRef.current?.focus();
+      setError("Your browser didn't allow reading the clipboard. Paste with Ctrl+V or long-press instead.");
     }
-    const detected = detectSourceType(trimmed);
-    setDetectedType(detected);
-    setIsPlaylist(isYouTubePlaylist(trimmed));
   }
 
-  async function addContent() {
+  async function addContent(e?: FormEvent) {
+    e?.preventDefault();
     if (submitting) return;
-
-    const trimmedLink = link.trim();
-    if (!trimmedLink) {
-      setError("Please provide a link.");
+    const pasted = firstUrl(trimmed) ?? trimmed;
+    if (!pasted) {
+      setError("Paste a link to save.");
+      return;
+    }
+    if (!looksLikeUrl(pasted)) {
+      setError("That doesn't look like a full link. It should start with https://");
       return;
     }
 
     setSubmitting(true);
     setError(null);
-
     try {
-      if (isPlaylist) {
-        const trimmedTitle = title.trim();
+      if (isYouTubePlaylist(pasted)) {
         await api.post("/api/v1/content/playlist", {
-          playlistUrl: trimmedLink,
-          ...(trimmedTitle ? { title: trimmedTitle } : {}),
+          playlistUrl: pasted,
+          ...(title.trim() ? { title: title.trim() } : {}),
         });
+        onSaved?.({ playlist: true });
       } else {
-        const trimmedTitle = title.trim();
-        if (!trimmedTitle) {
-          setError("Please provide a title.");
-          setSubmitting(false);
-          return;
-        }
-        await api.post("/api/v1/content", {
-          link: trimmedLink,
-          title: trimmedTitle,
-          sourceType: detectedType ?? "other",
+        const res = await saveLink({
+          link: pasted,
+          sourceType: detectSourceType(pasted),
+          ...(title.trim() ? { title: title.trim() } : {}),
+          ...(note.trim() ? { note: note.trim() } : {}),
         });
+        onSaved?.(res);
       }
-      handleClose();
+      onClose();
     } catch (err) {
       setError(normalizeError(err).message);
     } finally {
@@ -81,101 +114,121 @@ export function CreateContentModal({ open, onClose }: CreateContentModalProps) {
     }
   }
 
-  if (!open) return null;
-
-  const detectedChannel = detectedType ? getChannelConfig(detectedType) : null;
-
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-300"
-        onClick={handleClose}
-      />
+    <Dialog open={open} onClose={handleClose} size="lg" label={isPlaylist ? "Import playlist" : "Save a link"}>
+      <form onSubmit={addContent} noValidate>
+        <DialogHeader
+          title={isPlaylist ? "Import a playlist" : "Save a link"}
+          description={
+            isPlaylist
+              ? "Every video in it lands in your YouTube brain, in order."
+              : "Paste anything. Brainly fetches the title and works out what it is."
+          }
+          onClose={handleClose}
+        />
 
-      {/* Modal */}
-      <div className="relative bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
-        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-xl font-bold text-gray-900">
-            {isPlaylist ? "Import Playlist" : "Add Content"}
-          </h2>
-          <button
-            onClick={handleClose}
-            className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-400 hover:text-gray-900"
-          >
-            <CrossIcon />
-          </button>
-        </div>
-
-        <div className="p-8 space-y-5">
-          {error && (
-            <div className="p-4 bg-red-50 border border-red-100 text-red-800 text-sm rounded-2xl animate-in fade-in slide-in-from-top-1">
-              {error}
+        <div className="space-y-5 px-6 pb-6">
+          <div>
+            <Field
+              reference={linkRef}
+              data-autofocus
+              label="Link"
+              type="url"
+              inputMode="url"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="https://"
+              value={link}
+              onChange={(e) => {
+                setLink(e.target.value);
+                if (error) setError(null);
+              }}
+              leading={detected ? <SourceIcon channel={detected} size="xs" bare /> : <Link2 className="size-4" />}
+              trailing={
+                canPaste && !link ? (
+                  <button
+                    type="button"
+                    onClick={paste}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-ink-2 hover:bg-surface-2 hover:text-ink"
+                  >
+                    <ClipboardPaste className="size-3.5" />
+                    Paste
+                  </button>
+                ) : undefined
+              }
+              className="font-mono text-[14px]"
+            />
+            <div className="mt-2 h-5">
+              <AnimatePresence mode="wait" initial={false}>
+                {detectedChannel && (
+                  <motion.div
+                    key={isPlaylist ? "playlist" : detectedChannel.id}
+                    initial={{ opacity: 0, y: 4, filter: "blur(3px)" }}
+                    animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                    exit={{ opacity: 0, y: -4, filter: "blur(3px)" }}
+                    transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                    className="inline-flex items-center gap-1.5 text-[13px] text-ink-2"
+                  >
+                    {isPlaylist ? (
+                      <>
+                        <ListVideo className="size-4 text-[#FF0033]" />
+                        <span>
+                          <span className="font-medium text-ink">YouTube playlist</span> · imports up to 500 videos
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <SourceIcon channel={detectedChannel.id} size="xs" />
+                        <span>
+                          From <span className="font-medium text-ink">{detectedChannel.label}</span>
+                        </span>
+                      </>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
-          )}
+          </div>
 
-          <Input
-            label="Link"
-            placeholder="Paste any URL — YouTube, GitHub, Twitter, Reddit…"
-            value={link}
-            onChange={(e) => handleLinkChange(e.target.value)}
-            className="h-12"
-            autoFocus
-          />
-
-          {/* Detection badge — appears as soon as a recognisable URL is pasted */}
-          {detectedChannel && !isPlaylist && (
-            <div
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-semibold animate-in fade-in duration-200 ${detectedChannel.badgeClass}`}
-            >
-              <detectedChannel.Icon className="w-4 h-4" />
-              <span>{detectedChannel.label} detected</span>
-              <svg className="w-3.5 h-3.5 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-          )}
-
-          {isPlaylist && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-semibold text-red-600 bg-red-50 border-red-100 animate-in fade-in duration-200">
-              <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h10v2H4v-2zm12 0l5 3-5 3v-6z" />
-              </svg>
-              <span>YouTube Playlist detected</span>
-            </div>
-          )}
-
-          <Input
-            label={isPlaylist ? "Playlist name (optional)" : "Title"}
-            placeholder={
-              isPlaylist
-                ? "Leave blank to use the playlist's name"
-                : "Give it a name"
-            }
+          <Field
+            label={isPlaylist ? "Name (optional)" : "Title (optional)"}
+            placeholder={isPlaylist ? "Uses the playlist's own name if left empty" : "Uses the page's own title if left empty"}
             value={title}
+            maxLength={300}
             onChange={(e) => setTitle(e.target.value)}
-            className="h-12"
           />
 
+          {!isPlaylist && (
+            <Field
+              label="Why you're saving it (optional)"
+              placeholder="For the Goa trip · try with rice · send to Priya"
+              value={note}
+              maxLength={1000}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          )}
+
+          {error && (
+            <p role="alert" className="rounded-xl bg-danger-soft px-3.5 py-2.5 text-sm text-danger">
+              {error}
+            </p>
+          )}
         </div>
 
-        <div className="p-6 bg-gray-50 flex gap-3">
-          <Button
-            onClick={handleClose}
-            variant="secondary"
-            text="Cancel"
-            className="flex-1 h-12 rounded-2xl"
-          />
-          <Button
-            onClick={addContent}
-            variant="primary"
-            text={isPlaylist ? "Import Playlist" : "Save to Brain"}
-            loading={submitting}
-            loadingText={isPlaylist ? "Importing…" : "Saving…"}
-            className="flex-1 h-12 rounded-2xl shadow-lg shadow-purple-200"
-          />
-        </div>
-      </div>
-    </div>
+        <DialogFooter className="justify-between">
+          <span className="hidden items-center gap-1.5 text-xs text-ink-3 sm:inline-flex">
+            <Kbd>↵</Kbd> to save
+          </span>
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={handleClose}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" loading={submitting} loadingText={isPlaylist ? "Importing…" : "Saving…"}>
+              {isPlaylist ? "Import playlist" : "Save link"}
+            </Button>
+          </div>
+        </DialogFooter>
+      </form>
+    </Dialog>
   );
 }

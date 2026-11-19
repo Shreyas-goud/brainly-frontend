@@ -1,7 +1,12 @@
 import { useState } from "react";
+import { Check, Copy, ListVideo, Play, Trash2 } from "lucide-react";
 import { api, normalizeError } from "../lib/api";
 import { useConfirm } from "./ConfirmDialog";
 import { type Collection } from "../hooks/useContent";
+import { SourceIcon } from "./ui/SourceIcon";
+import { IconButton } from "./ui/Button";
+import { cn } from "../lib/cn";
+import { count } from "../lib/format";
 
 interface PlaylistCardProps {
   collection: Collection;
@@ -24,16 +29,15 @@ export function PlaylistCard({
 }: PlaylistCardProps) {
   const { title, thumbnail, itemCount, channelTitle, tags } = collection;
   const [deleting, setDeleting] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const confirm = useConfirm();
 
-  const isSelectable = Boolean(selectionMode);
-
-  async function handleDelete(e: React.MouseEvent) {
-    e.stopPropagation();
+  async function handleDelete() {
     if (deleting) return;
     const ok = await confirm({
       title: "Remove this playlist?",
-      message: `"${title}" and all ${itemCount} of its videos will be permanently removed.`,
+      message: `“${title}” and its ${count(itemCount, "video")} will be permanently removed.`,
       confirmText: "Remove playlist",
       destructive: true,
     });
@@ -43,143 +47,114 @@ export function PlaylistCard({
       await api.delete(`/api/v1/collections/${collection._id}`);
       onDeleted?.();
     } catch (err) {
-      alert(normalizeError(err).message);
-    } finally {
+      setError(normalizeError(err).message);
       setDeleting(false);
     }
   }
 
-  function copyLink(e: React.MouseEvent) {
-    e.stopPropagation();
-    navigator.clipboard.writeText(collection.url);
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(collection.url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* clipboard blocked */
+    }
   }
 
   return (
-    <div
-      className={`group relative bg-white rounded-3xl border shadow-sm transition-all duration-300 overflow-hidden flex flex-col ${
-        deleting ? "opacity-50 grayscale" : ""
-      } ${
-        selected
-          ? "border-purple-500 ring-2 ring-purple-500"
-          : "border-gray-100 hover:shadow-xl hover:border-purple-100"
-      }`}
+    <article
+      className={cn(
+        "group relative flex flex-col rounded-2xl bg-surface p-4 ring-1 transition-[box-shadow,transform,opacity] duration-300 ease-out",
+        selected ? "ring-2 ring-accent shadow-lift" : "shadow-card ring-line hover:shadow-lift hover:ring-line-strong",
+        deleting && "pointer-events-none scale-[0.98] opacity-40"
+      )}
     >
-      {/* Selection overlay — same pattern as Card */}
-      {isSelectable && (
+      {selectionMode && (
         <button
           type="button"
           onClick={() => onToggleSelect?.(collection._id)}
           aria-pressed={selected}
-          aria-label={selected ? "Deselect playlist" : "Select playlist"}
-          className={`absolute inset-0 z-20 transition-colors ${
-            selected ? "bg-purple-500/10" : "bg-transparent hover:bg-gray-900/5"
-          }`}
+          aria-label={selected ? `Deselect ${title}` : `Select ${title}`}
+          className={cn(
+            "absolute inset-0 z-20 rounded-2xl transition-colors",
+            selected ? "bg-accent/[0.06]" : "hover:bg-ink/[0.03]"
+          )}
         >
           <span
-            className={`absolute top-4 left-4 w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all ${
-              selected
-                ? "bg-purple-600 border-purple-600 text-white scale-100"
-                : "bg-white/90 border-gray-300 text-transparent"
-            }`}
+            className={cn(
+              "absolute right-3.5 top-3.5 flex size-6 items-center justify-center rounded-full ring-1 ring-inset transition-all duration-200",
+              selected ? "scale-100 bg-accent text-white ring-accent" : "scale-95 bg-surface text-transparent ring-line-strong"
+            )}
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
-            </svg>
+            <Check className="size-3.5" strokeWidth={3} />
           </span>
         </button>
       )}
 
-      {/* Thumbnail cover — click to open */}
-      <div
-        onClick={() => !selectionMode && onOpen()}
-        className={`p-5 pb-0 ${!selectionMode ? "cursor-pointer" : ""}`}
-      >
-        <div className="relative">
-          <div className="absolute -top-2 left-2 right-2 h-4 bg-gray-200 rounded-t-xl" />
-          <div className="absolute -top-1 left-1 right-1 h-4 bg-gray-300 rounded-t-xl" />
-          <div className="relative rounded-2xl overflow-hidden aspect-video bg-gray-100">
-            {thumbnail && (
-              <img
-                src={thumbnail}
-                alt={title}
-                loading="lazy"
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-              />
-            )}
-            <div className="absolute inset-y-0 right-0 w-[40%] bg-black/70 backdrop-blur-[1px] flex flex-col items-center justify-center text-white">
-              <svg className="w-6 h-6 mb-1" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h10v2H4v-2zm12 0l5 3-5 3v-6z" />
-              </svg>
-              <span className="text-lg font-bold leading-none">{itemCount}</span>
-              <span className="text-[11px] uppercase tracking-wide opacity-80">
-                {itemCount === 1 ? "video" : "videos"}
-              </span>
-            </div>
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-              <span className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-2 px-4 py-2 bg-white/95 text-gray-900 text-sm font-bold rounded-full shadow-lg">
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-                Play all
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Title row — matches Card header: title left, action buttons right */}
-      <div
-        onClick={() => !selectionMode && onOpen()}
-        className={`p-5 flex justify-between items-start gap-4 ${
-          !selectionMode ? "cursor-pointer" : ""
-        }`}
-      >
-        <div className="min-w-0">
-          <h3 className="font-bold text-gray-900 leading-tight line-clamp-2">{title}</h3>
-          <p className="text-sm text-gray-500 mt-1">
-            {channelTitle ? `${channelTitle} · ` : ""}Playlist
-          </p>
-        </div>
-
+      <header className="flex items-center gap-2">
+        <SourceIcon channel="youtube" size="xs" />
+        <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ink-3">
+          Playlist{channelTitle ? ` · ${channelTitle}` : ""}
+        </span>
         {!readOnly && !selectionMode && (
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-            <button
-              onClick={copyLink}
-              className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-              title="Copy Link"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-              </svg>
-            </button>
-            <button
-              onClick={handleDelete}
-              disabled={deleting}
-              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-              title="Delete"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
+          <div className="-my-1 -mr-1.5 flex items-center opacity-100 transition-opacity duration-200 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-focus-within:opacity-100 [@media(hover:hover)]:group-hover:opacity-100">
+            <IconButton label={copied ? "Copied" : "Copy link"} size="sm" onClick={copyLink}>
+              {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
+            </IconButton>
+            <IconButton label="Delete playlist" size="sm" tone="danger" onClick={handleDelete}>
+              <Trash2 className="size-3.5" />
+            </IconButton>
           </div>
         )}
-      </div>
+      </header>
 
-      {/* Footer tags */}
-      <div className="px-5 py-3 bg-gray-50/50 border-t border-gray-50 flex items-center gap-2 overflow-x-auto scrollbar-hide">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-red-600 px-2 py-1 bg-red-50 border border-red-100 rounded-md shrink-0">
-          Playlist
-        </span>
-        {tags?.map((tag) => (
-          <span
-            key={tag._id}
-            className="text-[10px] font-bold uppercase tracking-wider text-purple-600 px-2 py-1 bg-purple-50 border border-purple-100 rounded-md whitespace-nowrap"
-          >
-            {tag.name}
+      <h3 className="mb-3 mt-2.5 line-clamp-2 text-[15px] font-semibold leading-snug tracking-[-0.01em] text-ink">{title}</h3>
+
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={selectionMode}
+        className="group/cover relative block w-full pt-2.5 text-left"
+        aria-label={`Open playlist ${title}`}
+      >
+        {/* The stack behind says "many videos" before the count does. */}
+        <span className="absolute inset-x-4 top-0 h-6 rounded-t-xl bg-surface-3" aria-hidden="true" />
+        <span className="absolute inset-x-2 top-1 h-6 rounded-t-xl bg-line-strong" aria-hidden="true" />
+        <span className="relative block aspect-video overflow-hidden rounded-xl bg-surface-3">
+          {thumbnail && (
+            <img
+              src={thumbnail}
+              alt=""
+              loading="lazy"
+              className="size-full object-cover transition-transform duration-500 ease-out group-hover/cover:scale-[1.04]"
+            />
+          )}
+          <span className="absolute inset-y-0 right-0 flex w-[38%] flex-col items-center justify-center gap-0.5 bg-black/70 text-white backdrop-blur-[2px]">
+            <ListVideo className="mb-1 size-5" />
+            <span className="text-lg font-semibold leading-none tnum">{itemCount}</span>
+            <span className="text-[11px] text-white/75">{itemCount === 1 ? "video" : "videos"}</span>
           </span>
-        ))}
-      </div>
-    </div>
+          <span className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover/cover:bg-black/20">
+            <span className="flex translate-y-1 items-center gap-1.5 rounded-full bg-white/95 px-3.5 py-1.5 text-[13px] font-semibold text-black opacity-0 shadow-lift transition-all duration-200 group-hover/cover:translate-y-0 group-hover/cover:opacity-100">
+              <Play className="size-3.5 fill-current" />
+              Play all
+            </span>
+          </span>
+        </span>
+      </button>
+
+      {error && <p className="mt-3 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">{error}</p>}
+
+      {tags && tags.length > 0 && (
+        <footer className="mt-3.5 flex flex-wrap gap-1.5">
+          {tags.map((tag) => (
+            <span key={tag._id} className="rounded-md bg-surface-2 px-1.5 py-0.5 text-xs text-ink-2">
+              #{tag.name}
+            </span>
+          ))}
+        </footer>
+      )}
+    </article>
   );
 }

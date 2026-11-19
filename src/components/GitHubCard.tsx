@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { GitFork, Star } from "lucide-react";
 import type { OgData } from "../hooks/useContent";
+import { compactNumber } from "../lib/format";
 import { LinkPreviewCard } from "./LinkPreviewCard";
 
 interface GitHubCardProps {
@@ -21,7 +23,7 @@ interface GitHubRepo {
 
 const REPO_RE = /^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/?#\s]+)/i;
 
-const LANGUAGE_COLORS: Record<string, string> = {
+export const LANGUAGE_COLORS: Record<string, string> = {
   TypeScript: "#3178c6",
   JavaScript: "#f1e05a",
   Python: "#3572A5",
@@ -43,64 +45,22 @@ const LANGUAGE_COLORS: Record<string, string> = {
   Svelte: "#ff3e00",
 };
 
-function formatCount(n: number): string {
-  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "k";
-  return String(n);
-}
-
-function Skeleton() {
-  return (
-    <div className="rounded-2xl border border-gray-100 p-4 animate-pulse">
-      <div className="flex items-center gap-3 mb-3">
-        <div className="w-9 h-9 rounded-full bg-gray-200 shrink-0" />
-        <div className="flex-1 space-y-1.5">
-          <div className="h-4 bg-gray-200 rounded w-1/2" />
-          <div className="h-3 bg-gray-100 rounded w-1/3" />
-        </div>
-      </div>
-      <div className="h-3 bg-gray-100 rounded w-full mb-2" />
-      <div className="h-3 bg-gray-100 rounded w-3/4" />
-      <div className="flex gap-3 mt-3">
-        <div className="h-4 bg-gray-100 rounded w-10" />
-        <div className="h-4 bg-gray-100 rounded w-10" />
-        <div className="h-4 bg-gray-100 rounded w-14" />
-      </div>
-    </div>
-  );
-}
-
-function StarIcon() {
-  return (
-    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.86L12 17.77l-6.18 3.23L7 14.14 2 9.27l6.91-1.01z" />
-    </svg>
-  );
-}
-
-function ForkIcon() {
-  return (
-    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 16 16">
-      <path d="M5 5.372v.878c0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75v-.878a2.25 2.25 0 1 1 1.5 0v.878a2.25 2.25 0 0 1-2.25 2.25h-1.5v2.128a2.251 2.251 0 1 1-1.5 0V8.5h-1.5A2.25 2.25 0 0 1 3.5 6.25v-.878a2.25 2.25 0 1 1 1.5 0ZM5 3.25a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0zm6.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5zm-3 8.75a.75.75 0 1 0-1.5 0 .75.75 0 0 0 1.5 0z" />
-    </svg>
-  );
-}
-
 export function GitHubCard({ url, ogData }: GitHubCardProps) {
   const [repo, setRepo] = useState<GitHubRepo | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
 
   const match = url.match(REPO_RE);
-  const isRepoUrl = Boolean(match);
+  const owner = match?.[1];
+  const name = match?.[2]?.replace(/\.git$/, "");
 
   useEffect(() => {
-    if (!match) {
+    if (!owner || !name) {
       setStatus("error");
       return;
     }
-    const [, owner, repoName] = match;
     let active = true;
     setStatus("loading");
-    fetch(`https://api.github.com/repos/${owner}/${repoName}`, {
+    fetch(`https://api.github.com/repos/${owner}/${name}`, {
       headers: { Accept: "application/vnd.github+json" },
     })
       .then((r) => {
@@ -112,92 +72,73 @@ export function GitHubCard({ url, ogData }: GitHubCardProps) {
         setRepo(data);
         setStatus("ready");
       })
-      .catch(() => { if (active) setStatus("error"); });
-    return () => { active = false; };
-  }, [url]);
+      .catch(() => active && setStatus("error"));
+    return () => {
+      active = false;
+    };
+  }, [owner, name]);
 
-  // Non-repo GitHub URL or API failed — fall back to OG preview card.
-  if (!isRepoUrl || status === "error") {
-    return <LinkPreviewCard url={url} ogData={ogData} />;
+  if (!match || status === "error") return <LinkPreviewCard url={url} ogData={ogData} />;
+
+  if (status === "loading" || !repo) {
+    return (
+      <div className="space-y-2.5" aria-hidden="true">
+        <div className="flex items-center gap-2.5">
+          <div className="skeleton size-8 rounded-lg" />
+          <div className="skeleton h-3.5 w-1/2 rounded" />
+        </div>
+        <div className="skeleton h-3 w-full rounded" />
+        <div className="skeleton h-3 w-2/3 rounded" />
+      </div>
+    );
   }
-
-  if (status === "loading") return <Skeleton />;
-  if (!repo) return <LinkPreviewCard url={url} ogData={ogData} />;
 
   const langColor = repo.language ? (LANGUAGE_COLORS[repo.language] ?? "#8b8b8b") : null;
 
   return (
-    <a
-      href={repo.html_url}
-      target="_blank"
-      rel="noreferrer"
-      className="block rounded-2xl border border-gray-100 p-4 hover:border-purple-100 hover:shadow-md transition-all group"
-    >
-      {/* Header: avatar + repo name */}
-      <div className="flex items-center gap-3 mb-2.5">
+    <a href={repo.html_url} target="_blank" rel="noreferrer" className="group/inner block">
+      <div className="flex items-center gap-2.5">
         <img
           src={repo.owner.avatar_url}
-          alt={repo.owner.login}
+          alt=""
           width={32}
           height={32}
           loading="lazy"
-          className="rounded-full shrink-0 ring-1 ring-gray-100"
+          className="size-8 shrink-0 rounded-lg ring-1 ring-line"
         />
-        <div className="min-w-0">
-          <p className="text-sm font-bold text-gray-900 font-mono leading-tight truncate group-hover:text-purple-700 transition-colors">
-            {repo.full_name}
-          </p>
-          <p className="text-[11px] text-gray-400">github.com</p>
-        </div>
-        <svg
-          className="w-4 h-4 text-gray-300 group-hover:text-purple-400 transition-colors shrink-0 ml-auto"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-        </svg>
+        <p className="min-w-0 truncate font-mono text-[13px] text-ink-2">
+          {repo.owner.login}/<span className="font-semibold text-ink">{repo.full_name.split("/")[1]}</span>
+        </p>
       </div>
 
-      {/* Description */}
       {repo.description && (
-        <p className="text-xs text-gray-600 line-clamp-2 mb-3 leading-relaxed">
-          {repo.description}
-        </p>
+        <p className="mt-2.5 line-clamp-3 text-[13.5px] leading-relaxed text-ink-2 text-pretty">{repo.description}</p>
       )}
 
-      {/* Topics */}
       {repo.topics?.length > 0 && (
-        <div className="flex flex-wrap gap-1 mb-3">
+        <div className="mt-2.5 flex flex-wrap gap-1">
           {repo.topics.slice(0, 4).map((t) => (
-            <span
-              key={t}
-              className="text-[10px] font-medium text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded-full"
-            >
+            <span key={t} className="rounded-full bg-accent-soft px-2 py-0.5 text-[11.5px] font-medium text-accent-ink">
               {t}
             </span>
           ))}
         </div>
       )}
 
-      {/* Stats row */}
-      <div className="flex items-center gap-3 text-xs text-gray-500">
+      <div className="mt-3 flex items-center gap-4 text-[13px] text-ink-3 tnum">
         {langColor && (
-          <span className="flex items-center gap-1.5">
-            <span
-              className="w-3 h-3 rounded-full shrink-0"
-              style={{ backgroundColor: langColor }}
-            />
-            <span>{repo.language}</span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-2.5 rounded-full" style={{ backgroundColor: langColor }} />
+            {repo.language}
           </span>
         )}
-        <span className="flex items-center gap-1 text-amber-600">
-          <StarIcon />
-          {formatCount(repo.stargazers_count)}
+        <span className="inline-flex items-center gap-1">
+          <Star className="size-3.5" />
+          {compactNumber(repo.stargazers_count)}
         </span>
-        <span className="flex items-center gap-1">
-          <ForkIcon />
-          {formatCount(repo.forks_count)}
+        <span className="inline-flex items-center gap-1">
+          <GitFork className="size-3.5" />
+          {compactNumber(repo.forks_count)}
         </span>
       </div>
     </a>

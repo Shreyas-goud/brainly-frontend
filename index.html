@@ -1,10 +1,30 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Brainly</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Brainly" />
+    <!-- X serves its videos only without a foreign Referer; embeds that need one set it on the iframe. -->
+    <meta name="referrer" content="no-referrer" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="Brainly keeps every link you save — videos, posts, repos, threads and playlists — in one searchable brain you can share." />
+    <meta name="theme-color" content="#F6F5F1" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0D0D0C" media="(prefers-color-scheme: dark)" />
+    <title>Brainly — one brain for everything you save</title>
+    <script>
+      // Apply the saved theme before first paint so there is no flash.
+      (function () {
+        try {
+          if (location.pathname === "/") return; // the landing page is always light
+          var saved = localStorage.getItem("theme");
+          var dark = saved === "dark" || (saved !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (dark) document.documentElement.classList.add("dark");
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -1,20 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Input } from "../components/Input";
-import { PasswordInput } from "../components/PasswordInput";
-import { Button } from "../components/Button";
+import { AlertCircle, ArrowRight } from "lucide-react";
+import { Field, PasswordField } from "../components/ui/Field";
+import { Button } from "../components/ui/Button";
 import { AuthLayout } from "../components/AuthLayout";
 import { useAuth } from "../lib/auth/AuthContext";
 import { useAuthForm } from "../lib/auth/useAuthForm";
-import {
-  useElapsedSince,
-  progressiveSubmitMessage,
-} from "../hooks/useElapsedSince";
-import {
-  estimatePasswordStrength,
-  validateEmail,
-  validatePasswordForSignup,
-} from "../lib/validators";
+import { useElapsedSince, progressiveSubmitMessage } from "../hooks/useElapsedSince";
+import { estimatePasswordStrength, validateEmail, validatePasswordForSignup } from "../lib/validators";
 import { warmupBackend } from "../lib/api";
 
 export function Signup() {
@@ -26,18 +19,14 @@ export function Signup() {
   const [emailError, setEmailError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
 
-  const { signUp } = useAuth();
+  const { signUp, signIn, setSession } = useAuth();
   const { state, submit, succeed, fail } = useAuthForm();
   const navigate = useNavigate();
 
-  const submittingSince =
-    state.status === "submitting" ? state.since : null;
+  const submittingSince = state.status === "submitting" ? state.since : null;
   const elapsed = useElapsedSince(submittingSince);
 
-  const strength = useMemo(
-    () => (passwordValue ? estimatePasswordStrength(passwordValue) : null),
-    [passwordValue]
-  );
+  const strength = useMemo(() => (passwordValue ? estimatePasswordStrength(passwordValue) : null), [passwordValue]);
 
   useEffect(() => {
     warmupBackend();
@@ -67,72 +56,62 @@ export function Signup() {
 
     submit();
     const result = await signUp(email, password);
-    if (result.ok) {
-      succeed("Account created!");
-      window.setTimeout(() => navigate("/signin", { replace: true }), 1200);
-    } else {
+    if (!result.ok) {
       fail(result.error);
       if (result.error.code === "EMAIL_TAKEN") {
         emailRef.current?.focus();
         emailRef.current?.select();
       }
+      return;
     }
+
+    // Sign straight in, so a new account lands in its brain, not on another form.
+    const session = await signIn(email, password);
+    succeed("Your brain is ready");
+    window.setTimeout(() => {
+      if (session.ok && session.token) {
+        setSession(session.token);
+        navigate("/app", { replace: true });
+      } else {
+        navigate("/signin", { replace: true });
+      }
+    }, 1100);
   }
 
   const isSubmitting = state.status === "submitting";
   const isSuccess = state.status === "success";
-  const submitMessage = isSubmitting
-    ? progressiveSubmitMessage(elapsed, "Creating your account")
-    : null;
+  const submitMessage = isSubmitting ? progressiveSubmitMessage(elapsed, "Creating your account") : null;
 
   return (
     <AuthLayout
-      title="Create an account"
-      subtitle="Join Brainlyy and start building your digital memory today."
+      title="Make your brain"
+      subtitle="Free, and ready the moment you paste a link."
       isSuccess={isSuccess}
       successMessage={state.status === "success" ? state.message : ""}
     >
       {state.status === "error" && (
-        <div
-          role="alert"
-          className="p-4 rounded-xl bg-red-50 border border-red-100 text-red-800 text-sm animate-in fade-in slide-in-from-top-2 duration-300"
-        >
-          <div className="flex gap-2">
-            <svg
-              className="h-5 w-5 text-red-400 shrink-0"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                clipRule="evenodd"
-              />
-            </svg>
-            <div>
-              {state.error.message}
-              {state.error.code === "EMAIL_TAKEN" && (
-                <>
-                  {" "}
-                  <Link
-                    to="/signin"
-                    className="font-semibold underline hover:text-red-900"
-                  >
-                    Sign in instead
-                  </Link>
-                  .
-                </>
-              )}
-            </div>
-          </div>
+        <div role="alert" className="flex gap-2.5 rounded-xl bg-danger-soft px-3.5 py-3 text-sm text-danger">
+          <AlertCircle className="mt-0.5 size-4 shrink-0" />
+          <span>
+            {state.error.message}
+            {state.error.code === "EMAIL_TAKEN" && (
+              <>
+                {" "}
+                <Link to="/signin" className="font-semibold underline underline-offset-2">
+                  Sign in instead
+                </Link>
+                .
+              </>
+            )}
+          </span>
         </div>
       )}
 
-      <form onSubmit={onSubmit} noValidate className="space-y-5">
-        <Input
+      <form onSubmit={onSubmit} noValidate className="space-y-4">
+        <Field
           reference={emailRef}
-          label="Email address"
-          placeholder="name@example.com"
+          label="Email"
+          placeholder="you@example.com"
           type="email"
           name="email"
           autoComplete="email"
@@ -144,12 +123,11 @@ export function Signup() {
             setEmailValue(e.target.value);
             if (emailError) setEmailError(null);
           }}
-          className="h-11"
         />
-        <PasswordInput
+        <PasswordField
           reference={passwordRef}
           label="Password"
-          placeholder="Create a strong password"
+          placeholder="At least 8 characters"
           name="password"
           autoComplete="new-password"
           required
@@ -162,41 +140,34 @@ export function Signup() {
             setPasswordValue(e.target.value);
             if (passwordError) setPasswordError(null);
           }}
-          className="h-11"
         />
 
         <Button
           type="submit"
           variant="primary"
-          text="Create Account"
+          size="lg"
           loading={isSubmitting || isSuccess}
-          loadingText={isSuccess ? "Redirecting…" : "Creating account…"}
+          loadingText={isSuccess ? "Opening…" : "Creating account…"}
           fullWidth
-          className="h-12 text-base shadow-sm"
-        />
+          endIcon={<ArrowRight className="size-4" />}
+          className="!mt-6"
+        >
+          Create account
+        </Button>
 
         {submitMessage && (
-          <p
-            role="status"
-            aria-live="polite"
-            className="text-center text-sm text-gray-500 animate-pulse"
-          >
+          <p role="status" aria-live="polite" className="text-center text-[13px] text-ink-3">
             {submitMessage}
           </p>
         )}
       </form>
 
-      <div className="pt-6 text-center text-sm border-t border-gray-100">
-        <span className="text-gray-500">
-          Already have an account?{" "}
-          <Link
-            to="/signin"
-            className="text-purple-600 font-semibold hover:text-purple-700 hover:underline transition"
-          >
-            Sign In
-          </Link>
-        </span>
-      </div>
+      <p className="text-sm text-ink-2">
+        Already have one?{" "}
+        <Link to="/signin" className="font-medium text-ink underline decoration-line-strong underline-offset-4 hover:decoration-ink">
+          Sign in
+        </Link>
+      </p>
     </AuthLayout>
   );
 }

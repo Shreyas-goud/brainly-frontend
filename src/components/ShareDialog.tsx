@@ -1,15 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CrossIcon } from "../icons/CrossIcon";
+import { AnimatePresence, motion } from "motion/react";
+import { Check, Copy, Link2, Unlink } from "lucide-react";
 import { api, normalizeError } from "../lib/api";
 import { getChannelConfig, type BrainChannelId } from "../lib/channels";
+import { Dialog, DialogFooter, DialogHeader } from "./ui/Dialog";
+import { Button, IconButton } from "./ui/Button";
+import { SourceIcon } from "./ui/SourceIcon";
+import { cn } from "../lib/cn";
+import { count, formatDate } from "../lib/format";
 
 interface ShareDialogProps {
   open: boolean;
   onClose: () => void;
   /** Channels that have a brain — only these can be shared. */
   configuredChannels: BrainChannelId[];
-  /** When opened from a single channel's "Share Brain", preselect just that one. */
+  /** When opened from a single channel's "Share brain", preselect just that one. */
   preselect?: BrainChannelId | null;
+  /** Item count per channel, shown beside each toggle. */
+  counts?: Record<string, number>;
 }
 
 type ActiveShare = {
@@ -18,24 +26,20 @@ type ActiveShare = {
   createdAt: string;
 };
 
-type GeneratedLink = { url: string; channels: BrainChannelId[] };
+type GeneratedLink = { url: string; hash: string; channels: BrainChannelId[] };
 
 function labelsFor(channels: BrainChannelId[]): string {
   return channels.map((c) => getChannelConfig(c).label).join(", ");
 }
 
+const shareUrl = (hash: string) => `${window.location.origin}/share/${hash}`;
+
 /**
- * Channel-aware sharing. The user picks which channel brains to include, then
- * generates a stable, copyable link scoped to exactly that selection. Links are
- * idempotent on the selection (same channels → same link) and individually
- * revocable from the "Active links" list.
+ * Channel-aware sharing. Pick which channel brains to include, then generate a
+ * stable link scoped to exactly that selection. Links are idempotent on the
+ * selection (same channels → same link) and individually revocable.
  */
-export function ShareDialog({
-  open,
-  onClose,
-  configuredChannels,
-  preselect,
-}: ShareDialogProps) {
+export function ShareDialog({ open, onClose, configuredChannels, preselect, counts = {} }: ShareDialogProps) {
   const [selected, setSelected] = useState<Set<BrainChannelId>>(new Set());
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,41 +54,19 @@ export function ShareDialog({
       .catch(() => setShares([]));
   }, []);
 
-  // Reset + seed selection each time the modal opens.
   useEffect(() => {
     if (!open) return;
-    setSelected(
-      new Set(
-        preselect ? [preselect] : configuredChannels
-      )
-    );
+    setSelected(new Set(preselect ? [preselect] : configuredChannels));
     setGenerated(null);
     setError(null);
     loadShares();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Escape-to-close + lock body scroll.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [open, onClose]);
-
   const orderedSelection = useMemo(
     () => configuredChannels.filter((c) => selected.has(c)),
     [configuredChannels, selected]
   );
-
-  if (!open) return null;
 
   function toggle(channel: BrainChannelId) {
     setSelected((prev) => {
@@ -100,10 +82,7 @@ export function ShareDialog({
     try {
       await navigator.clipboard.writeText(url);
       setCopiedHash(hash);
-      window.setTimeout(
-        () => setCopiedHash((h) => (h === hash ? null : h)),
-        2000
-      );
+      window.setTimeout(() => setCopiedHash((h) => (h === hash ? null : h)), 1800);
     } catch {
       /* clipboard blocked — the visible field can be copied manually */
     }
@@ -114,12 +93,12 @@ export function ShareDialog({
     setGenerating(true);
     setError(null);
     try {
-      const res = await api.post<{ hash: string; channels: BrainChannelId[] }>(
-        "/api/v1/brain/share",
-        { channels: orderedSelection }
-      );
-      const url = `${window.location.origin}/share/${res.data.hash}`;
-      setGenerated({ url, channels: res.data.channels });
+      const res = await api.post<{ hash: string; channels: BrainChannelId[] }>("/api/v1/brain/share", {
+        channels: orderedSelection,
+      });
+      const url = shareUrl(res.data.hash);
+      setGenerated({ url, hash: res.data.hash, channels: res.data.channels });
+      copy(url, res.data.hash);
       loadShares();
     } catch (err) {
       setError(normalizeError(err).message);
@@ -132,189 +111,150 @@ export function ShareDialog({
     try {
       await api.delete(`/api/v1/brain/share/${hash}`);
       setShares((prev) => prev.filter((s) => s.hash !== hash));
-      setGenerated((g) =>
-        g && g.url.endsWith(`/share/${hash}`) ? null : g
-      );
-    } catch {
-      /* best-effort */
+      setGenerated((g) => (g && g.hash === hash ? null : g));
+    } catch (err) {
+      setError(normalizeError(err).message);
     }
   }
 
   const noChannels = configuredChannels.length === 0;
-  const generatedHash = generated ? generated.url.split("/share/")[1] : null;
-  const generatedCopied =
-    generatedHash !== null && copiedHash === generatedHash;
 
   return (
-    <div
-      className="fixed inset-0 z-[150] flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Share Channel Brains"
-    >
-      <div
-        className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-200"
-        onClick={onClose}
+    <Dialog open={open} onClose={onClose} size="md" label="Share your brain">
+      <DialogHeader
+        title="Share your brain"
+        description="Anyone with the link can browse the sources you pick. Revoke it whenever you like."
+        onClose={onClose}
       />
 
-      <div className="relative bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-2 duration-200 max-h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="p-6 flex items-start justify-between gap-4 shrink-0">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900">
-              Share Channel Brains
-            </h2>
-            <p className="text-sm text-gray-500">
-              Choose the channel brains you want to share.
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 -m-1 hover:bg-gray-100 rounded-xl text-gray-400 hover:text-gray-900 transition-colors"
-            aria-label="Close"
-          >
-            <CrossIcon />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="px-6 overflow-y-auto flex-1">
-          {noChannels ? (
-            <p className="text-sm text-gray-500 bg-gray-50 border border-gray-100 rounded-2xl p-4 text-center">
-              Configure a channel brain first, then come back to share it.
-            </p>
-          ) : (
-            <div className="space-y-2">
+      <div className="max-h-[60vh] overflow-y-auto px-6 pb-5">
+        {noChannels ? (
+          <p className="rounded-xl bg-surface-2 p-4 text-center text-sm text-ink-2">
+            Save a link first. Each source you save to becomes a brain you can share.
+          </p>
+        ) : (
+          <fieldset>
+            <legend className="sr-only">Sources to include</legend>
+            <div className="grid grid-cols-2 gap-2">
               {configuredChannels.map((channel) => {
                 const config = getChannelConfig(channel);
                 const isOn = selected.has(channel);
                 return (
                   <button
                     key={channel}
+                    type="button"
+                    role="checkbox"
+                    aria-checked={isOn}
                     onClick={() => toggle(channel)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all duration-150 ${
-                      isOn
-                        ? "border-purple-300 bg-purple-50"
-                        : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                    }`}
+                    className={cn(
+                      "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left ring-1 ring-inset transition-[background-color,box-shadow] duration-150",
+                      isOn ? "bg-accent-soft/60 ring-accent/60" : "ring-line hover:bg-surface-2 hover:ring-line-strong"
+                    )}
                   >
-                    <span className={`w-9 h-9 rounded-xl flex items-center justify-center ${config.iconBgClass}`}>
-                      <config.Icon className="w-5 h-5" />
-                    </span>
-                    <span className="flex-1 text-left text-sm font-semibold text-gray-900">
-                      {config.label}
+                    <SourceIcon channel={channel} size="sm" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13.5px] font-medium text-ink">{config.label}</span>
+                      <span className="block text-xs text-ink-3 tnum">{count(counts[channel] ?? 0, "item")}</span>
                     </span>
                     <span
-                      className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
-                        isOn
-                          ? "bg-purple-600 border-purple-600 text-white"
-                          : "border-gray-300"
-                      }`}
-                    >
-                      {isOn && (
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
-                        </svg>
+                      className={cn(
+                        "flex size-[18px] shrink-0 items-center justify-center rounded-md ring-1 ring-inset transition-colors",
+                        isOn ? "bg-accent text-white ring-accent" : "ring-line-strong"
                       )}
+                    >
+                      {isOn && <Check className="size-3" strokeWidth={3} />}
                     </span>
                   </button>
                 );
               })}
             </div>
-          )}
+          </fieldset>
+        )}
 
-          {/* Success / generated link */}
+        <AnimatePresence initial={false}>
           {generated && (
-            <div className="mt-4 rounded-2xl border border-green-100 bg-green-50 p-4 animate-in fade-in slide-in-from-bottom-1 duration-200">
-              <div className="flex items-center gap-2 text-green-700 font-semibold text-sm">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
-                </svg>
-                {generatedCopied ? "Copied" : "Share Link"}
-              </div>
-              <p className="text-xs text-green-700/80 mt-1">
-                Includes: {labelsFor(generated.channels)}
-              </p>
-              <div className="mt-3 flex items-center gap-2">
-                <input
-                  readOnly
-                  value={generated.url}
-                  onFocus={(e) => e.currentTarget.select()}
-                  className="flex-1 min-w-0 h-10 px-3 rounded-xl bg-white border border-green-200 text-xs text-gray-700 focus:outline-none"
-                />
-                <button
-                  onClick={() => {
-                    const hash = generated.url.split("/share/")[1];
-                    copy(generated.url, hash);
-                  }}
-                  className="shrink-0 h-10 px-3 rounded-xl text-xs font-semibold text-white bg-green-600 hover:bg-green-700 transition-colors"
-                >
-                  Copy
-                </button>
-              </div>
-            </div>
-          )}
-
-          {error && (
-            <p className="mt-4 text-sm text-red-700 bg-red-50 border border-red-100 rounded-2xl p-3">
-              {error}
-            </p>
-          )}
-
-          {/* Active links management */}
-          {shares.length > 0 && (
-            <div className="mt-5 mb-2">
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                Active links ({shares.length})
-              </span>
-              <div className="mt-2 space-y-2">
-                {shares.map((s) => {
-                  const url = `${window.location.origin}/share/${s.hash}`;
-                  return (
-                    <div
-                      key={s.hash}
-                      className="flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-100 bg-gray-50"
-                    >
-                      <span className="flex-1 min-w-0 text-xs text-gray-600 truncate">
-                        {labelsFor(s.channels)}
-                      </span>
-                      <button
-                        onClick={() => copy(url, s.hash)}
-                        className="shrink-0 text-xs font-semibold text-purple-600 hover:text-purple-700"
-                      >
-                        {copiedHash === s.hash ? "Copied" : "Copy"}
-                      </button>
-                      <button
-                        onClick={() => revoke(s.hash)}
-                        className="shrink-0 text-xs font-semibold text-gray-400 hover:text-red-600"
-                      >
-                        Revoke
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        {!noChannels && (
-          <div className="p-6 pt-4 shrink-0 flex items-center justify-between gap-4 border-t border-gray-100">
-            <span className="text-sm text-gray-500">
-              {orderedSelection.length} channel
-              {orderedSelection.length === 1 ? "" : "s"} selected
-            </span>
-            <button
-              onClick={generate}
-              disabled={orderedSelection.length === 0 || generating}
-              className="h-11 px-5 rounded-2xl font-semibold text-white bg-purple-600 hover:bg-purple-700 shadow-lg shadow-purple-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+              className="overflow-hidden"
             >
-              {generating ? "Generating…" : "Generate Share Link"}
-            </button>
+              <div className="mt-4 rounded-xl bg-surface-2 p-3">
+                <div className="flex items-center gap-2">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface text-ink-2 ring-1 ring-line">
+                    <Link2 className="size-4" />
+                  </span>
+                  <input
+                    readOnly
+                    value={generated.url}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="min-w-0 flex-1 bg-transparent font-mono text-[13px] text-ink outline-none"
+                    aria-label="Share link"
+                  />
+                  <Button
+                    size="sm"
+                    variant={copiedHash === generated.hash ? "secondary" : "primary"}
+                    onClick={() => copy(generated.url, generated.hash)}
+                    startIcon={copiedHash === generated.hash ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
+                  >
+                    {copiedHash === generated.hash ? "Copied" : "Copy"}
+                  </Button>
+                </div>
+                <p className="mt-2 px-1 text-xs text-ink-3">Includes {labelsFor(generated.channels)}</p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {error && <p className="mt-4 rounded-xl bg-danger-soft px-3.5 py-2.5 text-sm text-danger">{error}</p>}
+
+        {shares.length > 0 && (
+          <div className="mt-6">
+            <h3 className="text-[13px] font-medium text-ink-2">Live links</h3>
+            <ul className="mt-2 divide-y divide-line rounded-xl ring-1 ring-line">
+              {shares.map((s) => (
+                <li key={s.hash} className="flex items-center gap-2 px-3 py-2">
+                  <div className="flex -space-x-1.5">
+                    {s.channels.slice(0, 4).map((c) => (
+                      <SourceIcon key={c} channel={c} size="xs" className="ring-2 ring-surface" />
+                    ))}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] text-ink">{labelsFor(s.channels)}</p>
+                    {s.createdAt && <p className="text-xs text-ink-3">Made {formatDate(s.createdAt)}</p>}
+                  </div>
+                  <IconButton
+                    size="sm"
+                    label={copiedHash === s.hash ? "Copied" : "Copy link"}
+                    onClick={() => copy(shareUrl(s.hash), s.hash)}
+                  >
+                    {copiedHash === s.hash ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
+                  </IconButton>
+                  <IconButton size="sm" tone="danger" label="Revoke link" onClick={() => revoke(s.hash)}>
+                    <Unlink className="size-3.5" />
+                  </IconButton>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </div>
-    </div>
+
+      {!noChannels && (
+        <DialogFooter className="justify-between">
+          <span className="text-[13px] text-ink-3">{count(orderedSelection.length, "source")} selected</span>
+          <Button
+            variant="primary"
+            onClick={generate}
+            disabled={orderedSelection.length === 0}
+            loading={generating}
+            loadingText="Making link…"
+          >
+            {generated ? "Link ready" : "Create link"}
+          </Button>
+        </DialogFooter>
+      )}
+    </Dialog>
   );
 }

@@ -1,111 +1,124 @@
 import type { ComponentType } from "react";
+import { Layers, Link2, Mail, MessageCircle } from "lucide-react";
 import type { SourceType } from "./urlDetector";
-import { HomeIcon } from "../icons/HomeIcon";
-import { YoutubeIcon } from "../icons/YoutubeIcon";
-import { TwitterIcon } from "../icons/TwitterIcon";
-import { InstagramIcon } from "../icons/InstagramIcon";
-import { RedditIcon } from "../icons/RedditIcon";
-import { GitHubIcon } from "../icons/GitHubIcon";
-import { EmailIcon } from "../icons/EmailIcon";
-import { ChatIcon } from "../icons/ChatIcon";
-import { LinkIcon } from "../icons/LinkIcon";
+import {
+  GitHubMark,
+  InstagramMark,
+  RedditMark,
+  XMark,
+  YouTubeMark,
+} from "../components/icons/brands";
 
 export type ChannelId = "all" | SourceType;
 
 export interface ChannelConfig {
   id: ChannelId;
   label: string;
+  /** Short name for tight spots (chips, rails). */
+  short: string;
   Icon: ComponentType<{ className?: string }>;
+  /**
+   * The source's own colour, used only for its glyph and a faint tint.
+   * `null` means "draw in ink" (X, GitHub and generic links are monochrome).
+   */
+  color: string | null;
   sortOrder: number;
-  /** Tailwind classes for the footer badge on content cards. */
-  badgeClass: string;
-  /** Tailwind classes for the icon container in the card header. */
-  iconBgClass: string;
   /** Shown when the channel filter returns no results. */
   emptyMessage: string;
+  /** One line on what lands here, for empty states and the landing page. */
+  blurb: string;
 }
 
 export const CHANNELS: ChannelConfig[] = [
   {
     id: "all",
-    label: "All",
-    Icon: HomeIcon,
+    label: "Everything",
+    short: "All",
+    Icon: Layers,
+    color: null,
     sortOrder: 0,
-    badgeClass: "text-gray-500 bg-gray-50 border-gray-100",
-    iconBgClass: "bg-gray-50 text-gray-500",
     emptyMessage: "Your brain is empty",
+    blurb: "Every link you have saved, newest first.",
   },
   {
     id: "youtube",
     label: "YouTube",
-    Icon: YoutubeIcon,
+    short: "YouTube",
+    Icon: YouTubeMark,
+    color: "#FF0033",
     sortOrder: 1,
-    badgeClass: "text-red-600 bg-red-50 border-red-100",
-    iconBgClass: "bg-red-50 text-red-600",
-    emptyMessage: "No YouTube videos yet",
+    emptyMessage: "No videos yet",
+    blurb: "Videos and whole playlists, playable in place.",
   },
   {
     id: "x",
-    label: "X (Twitter)",
-    Icon: TwitterIcon,
+    label: "X",
+    short: "X",
+    Icon: XMark,
+    color: null,
     sortOrder: 2,
-    badgeClass: "text-blue-600 bg-blue-50 border-blue-100",
-    iconBgClass: "bg-blue-50 text-blue-600",
-    emptyMessage: "No tweets saved yet",
+    emptyMessage: "No posts saved yet",
+    blurb: "Posts with their text, media and replies count.",
   },
   {
     id: "instagram",
     label: "Instagram",
-    Icon: InstagramIcon,
+    short: "Instagram",
+    Icon: InstagramMark,
+    color: "#E1306C",
     sortOrder: 3,
-    badgeClass: "text-pink-600 bg-pink-50 border-pink-100",
-    iconBgClass: "bg-pink-50 text-pink-600",
     emptyMessage: "No Instagram posts yet",
+    blurb: "Posts and reels, embedded as they appear.",
   },
   {
     id: "reddit",
     label: "Reddit",
-    Icon: RedditIcon,
+    short: "Reddit",
+    Icon: RedditMark,
+    color: "#FF4500",
     sortOrder: 4,
-    badgeClass: "text-orange-600 bg-orange-50 border-orange-100",
-    iconBgClass: "bg-orange-50 text-orange-600",
-    emptyMessage: "No Reddit posts yet",
+    emptyMessage: "No Reddit threads yet",
+    blurb: "Threads with subreddit, score and comments.",
   },
   {
     id: "github",
     label: "GitHub",
-    Icon: GitHubIcon,
+    short: "GitHub",
+    Icon: GitHubMark,
+    color: null,
     sortOrder: 5,
-    badgeClass: "text-gray-800 bg-gray-100 border-gray-200",
-    iconBgClass: "bg-gray-100 text-gray-800",
     emptyMessage: "No GitHub links yet",
+    blurb: "Repos with stars, forks and language.",
   },
   {
     id: "email",
     label: "Email",
-    Icon: EmailIcon,
+    short: "Email",
+    Icon: Mail,
+    color: "#2F6FEB",
     sortOrder: 6,
-    badgeClass: "text-green-700 bg-green-50 border-green-100",
-    iconBgClass: "bg-green-50 text-green-700",
     emptyMessage: "No emails saved yet",
+    blurb: "Gmail and Outlook links to the threads that matter.",
   },
   {
     id: "chat",
-    label: "Chat",
-    Icon: ChatIcon,
+    label: "AI chats",
+    short: "Chats",
+    Icon: MessageCircle,
+    color: "#0E9F77",
     sortOrder: 7,
-    badgeClass: "text-purple-600 bg-purple-50 border-purple-100",
-    iconBgClass: "bg-purple-50 text-purple-600",
-    emptyMessage: "No chat links yet",
+    emptyMessage: "No AI chats saved yet",
+    blurb: "Shared ChatGPT and Claude conversations.",
   },
   {
     id: "other",
-    label: "Other",
-    Icon: LinkIcon,
+    label: "Links",
+    short: "Links",
+    Icon: Link2,
+    color: null,
     sortOrder: 8,
-    badgeClass: "text-gray-500 bg-gray-50 border-gray-100",
-    iconBgClass: "bg-gray-50 text-gray-500",
     emptyMessage: "No other links yet",
+    blurb: "Articles, docs and anything else, with a preview.",
   },
 ];
 
@@ -123,3 +136,16 @@ export function getChannelConfig(id: ChannelId): ChannelConfig {
 export const BRAIN_CHANNELS = CHANNELS.filter((c) => c.id !== "all");
 
 export type BrainChannelId = Exclude<ChannelId, "all">;
+
+/** Address segments for each app's page; most are the id itself. */
+const APP_SLUGS: Partial<Record<BrainChannelId, string>> = { chat: "ai-chats", other: "links" };
+
+export function appPath(id: BrainChannelId): string {
+  return `/app/${APP_SLUGS[id] ?? id}`;
+}
+
+export function appFromSlug(slug: string | undefined): BrainChannelId | null {
+  if (!slug) return null;
+  const hit = BRAIN_CHANNELS.find((c) => (APP_SLUGS[c.id as BrainChannelId] ?? c.id) === slug);
+  return hit ? (hit.id as BrainChannelId) : null;
+}

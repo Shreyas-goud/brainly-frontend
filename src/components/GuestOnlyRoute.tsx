@@ -5,7 +5,7 @@ import { useAuth } from "../lib/auth/AuthContext";
 export function GuestOnlyRoute({ children }: { children: ReactElement }) {
   const { isAuthenticated } = useAuth();
   if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/app" replace />;
   }
   return children;
 }

@@ -1,5 +1,8 @@
 import type { ReactNode } from "react";
-import { Logo } from "../icons/Logo";
+import { Link } from "react-router-dom";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { Logo, LogoMark } from "./brand/Logo";
+import { DEMO_ITEMS, DemoCard } from "./landing/demo";
 
 interface AuthLayoutProps {
   children: ReactNode;
@@ -9,83 +12,111 @@ interface AuthLayoutProps {
   successMessage?: string;
 }
 
-export function AuthLayout({
-  children,
-  title,
-  subtitle,
-  isSuccess = false,
-  successMessage,
-}: AuthLayoutProps) {
+const EASE = [0.16, 1, 0.3, 1] as const;
+
+export function AuthLayout({ children, title, subtitle, isSuccess = false, successMessage }: AuthLayoutProps) {
+  const reduced = useReducedMotion();
   return (
-    <div className="flex min-h-screen bg-white font-sans text-gray-900 overflow-hidden">
-      {/* Left Side: Branded Sidebar (Hidden on mobile) */}
-      <div className="hidden lg:flex lg:w-1/2 relative bg-gray-50 flex-col items-center justify-center p-12 overflow-hidden border-r border-gray-100">
-        {/* Animated Background Blobs */}
-        <div className="absolute -bottom-24 -left-24 w-80 h-80 bg-indigo-200 rounded-full opacity-30 animate-pulse" />
-        <div className="absolute -top-20 -right-20 w-96 h-96 bg-purple-200 rounded-full opacity-25 animate-pulse" />
+    <div className="flex min-h-[100dvh] bg-bg text-ink">
+      <div className="relative flex w-full flex-col px-6 py-6 sm:px-10 lg:w-[46%] lg:px-14">
+        <Link to="/" className="self-start rounded-lg" aria-label="Brainly home">
+          <Logo />
+        </Link>
 
-        <div className="relative z-10 max-w-md text-center">
-          <div className="flex justify-center mb-8">
-            <div className="p-4 bg-white rounded-2xl shadow-sm border border-gray-100 transition-transform duration-700 hover:scale-105">
-              <Logo size="lg" />
-            </div>
+        <div className="flex flex-1 items-center justify-center py-12">
+          <div className="relative w-full max-w-[360px]">
+            <AnimatePresence>
+              {isSuccess && (
+                <motion.div
+                  className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-bg text-center"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.3 }}
+                  role="status"
+                >
+                  <motion.div
+                    initial={reduced ? false : { scale: 0.6, rotate: -8, opacity: 0 }}
+                    animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                    transition={{ type: "spring", bounce: 0.35, duration: 0.7 }}
+                  >
+                    <LogoMark className="size-14" />
+                  </motion.div>
+                  <motion.h3
+                    className="mt-6 text-2xl font-semibold tracking-title"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.15, duration: 0.5, ease: EASE }}
+                  >
+                    {successMessage || "Done"}
+                  </motion.h3>
+                  <motion.p
+                    className="mt-1.5 text-sm text-ink-2"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.25, duration: 0.5, ease: EASE }}
+                  >
+                    Opening your brain…
+                  </motion.p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <motion.div
+              animate={isSuccess ? { opacity: 0, scale: 0.98, filter: "blur(4px)" } : { opacity: 1, scale: 1, filter: "blur(0px)" }}
+              initial={reduced ? false : { opacity: 0, y: 10 }}
+              transition={{ duration: 0.45, ease: EASE }}
+            >
+              <h1 className="text-[28px] font-semibold leading-tight tracking-title">{title}</h1>
+              <p className="mt-2 text-[15px] text-ink-2">{subtitle}</p>
+              <div className="mt-8 space-y-5">{children}</div>
+            </motion.div>
           </div>
-          <h1 className="text-4xl font-extrabold tracking-tight text-gray-900 mb-4">
-            Brainlyy
-          </h1>
-          <p className="text-xl text-gray-600 leading-relaxed">
-            Your personal digital memory. Save, organize, and share your
-            favorite content from the web in one beautiful space.
-          </p>
         </div>
 
-        <div className="absolute bottom-12 left-12 right-12 text-center">
-          <p className="text-sm font-medium text-gray-400 uppercase tracking-widest">
-            A Second Brain for the Content Era
-          </p>
-        </div>
+        <p className="text-center text-xs text-ink-3 lg:text-left">
+          Your links stay private until you choose to share a brain.
+        </p>
       </div>
 
-      {/* Right Side: Auth Form with Success Overlay */}
-      <div className="w-full lg:w-1/2 flex flex-col items-center justify-center p-8 sm:p-12 lg:p-24 bg-white relative">
-        <div className="w-full max-w-md relative">
-          {/* Success Overlay (Premium Transition) */}
-          {isSuccess && (
-            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white animate-fade-in">
-              <div className="mb-6 relative">
-                <div className="absolute inset-0 bg-purple-100 rounded-full animate-ping opacity-25" />
-                <div className="relative bg-white p-4 rounded-full shadow-lg border border-purple-50-200 animate-zoom-in">
-                  <Logo size="lg" />
-                </div>
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-2 animate-slide-up [animation-delay:200ms]">
-                {successMessage || "Success!"}
-              </h3>
-              <p className="text-gray-500 animate-slide-up [animation-delay:400ms]">
-                Preparing your experience...
-              </p>
-            </div>
-          )}
+      <AuthShowcase />
+    </div>
+  );
+}
 
-          {/* Form Content (Fades out on success) */}
-          <div
-            className={`transition-all duration-500 ${
-              isSuccess ? "opacity-0 scale-95 blur-sm" : "opacity-100 scale-100"
-            }`}
+/** Two slow columns of saved things, drifting in opposite directions. */
+function AuthShowcase() {
+  const reduced = useReducedMotion();
+  const colA = DEMO_ITEMS.filter((_, i) => i % 2 === 0);
+  const colB = DEMO_ITEMS.filter((_, i) => i % 2 === 1);
+
+  return (
+    <div className="relative m-3 hidden flex-1 overflow-hidden rounded-[28px] bg-inverse lg:block">
+      <div className="absolute inset-0 bg-[radial-gradient(80%_60%_at_70%_20%,rgb(var(--accent)/0.28),transparent_70%)]" />
+      <div
+        className="absolute inset-0 flex justify-center gap-5 pl-[18%]"
+        style={{ maskImage: "linear-gradient(to bottom, transparent, black 18%, black 82%, transparent)" }}
+      >
+        {[colA, colB].map((col, ci) => (
+          <motion.div
+            key={ci}
+            className="flex flex-col gap-5"
+            animate={reduced ? undefined : { y: ci === 0 ? ["0%", "-50%"] : ["-50%", "0%"] }}
+            transition={{ duration: 60, repeat: Infinity, ease: "linear" }}
+            style={{ marginTop: ci === 0 ? 0 : -120 }}
           >
-            <div className="lg:hidden flex justify-center mb-8">
-              <Logo size="md" />
-            </div>
-
-            <div className="mb-10 text-center lg:text-left">
-              <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl mb-3">
-                {title}
-              </h2>
-              <p className="text-lg text-gray-500">{subtitle}</p>
-            </div>
-
-            <div className="space-y-6">{children}</div>
-          </div>
+            {[...col, ...col].map((item, i) => (
+              <DemoCard key={`${item.id}-${i}`} item={item} compact className="w-[240px] shadow-float ring-0" />
+            ))}
+          </motion.div>
+        ))}
+      </div>
+      <div className="absolute inset-x-0 bottom-0 p-10 xl:p-14">
+        <div className="max-w-sm">
+          <p className="text-[30px] font-semibold leading-[1.1] tracking-display text-inverse-ink text-balance">
+            Saving is easy.
+            <br />
+            <span className="text-inverse-ink/55">Finding should be too.</span>
+          </p>
         </div>
       </div>
     </div>

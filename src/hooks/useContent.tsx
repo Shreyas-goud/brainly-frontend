@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, normalizeError, type AppError } from "../lib/api";
 import type { SourceType } from "../lib/urlDetector";
+import type { IntentId } from "../lib/intents";
 
 export type Tag = {
   _id: string;
@@ -13,6 +14,8 @@ export type OgData = {
   image: string | null;
   favicon: string | null;
 };
+
+export type ContentStatus = "active" | "done" | "archived";
 
 export type Content = {
   _id?: string;
@@ -29,6 +32,17 @@ export type Content = {
   collectionId?: string | null;
   /** Cached Open Graph / GitHub API preview data. Null on old content — components lazy-load. */
   ogData?: OgData | null;
+  /** Recall fields. Missing on items saved before recall existed until the server backfills them. */
+  intent?: IntentId;
+  note?: string;
+  status?: ContentStatus;
+  dueAt?: string | null;
+  plannedFor?: string | null;
+  reviews?: number;
+  doneAt?: string | null;
+  createdAt?: string;
+  timesShown?: number;
+  estSeconds?: number | null;
 };
 
 export type Collection = {
@@ -53,14 +67,22 @@ type CollectionsResponse = {
   collections: Collection[];
 };
 
-type CountsResponse = {
+export type Counts = {
+  /** By source. */
   counts: Record<string, number>;
+  /** Active saves by intent. */
+  intents: Record<string, number>;
+  statuses: Record<string, number>;
+  due: number;
+  planned: number;
 };
+
+const EMPTY_COUNTS: Counts = { counts: {}, intents: {}, statuses: {}, due: 0, planned: 0 };
 
 export function useContent() {
   const [contents, setContents] = useState<Content[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
-  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [meta, setMeta] = useState<Counts>(EMPTY_COUNTS);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<AppError | null>(null);
@@ -69,66 +91,66 @@ export function useContent() {
   // Guards against out-of-order responses from overlapping refreshes.
   const requestIdRef = useRef(0);
 
+  const refreshCounts = useCallback(() => {
+    return api
+      .get<Partial<Counts>>("/api/v1/content/counts")
+      .then((res) => setMeta({ ...EMPTY_COUNTS, ...res.data }))
+      .catch(() => {
+        /* counts are supplementary; the board still works without them */
+      });
+  }, []);
+
   const refresh = useCallback(async () => {
     const requestId = ++requestIdRef.current;
-    setLoading(true);
     setError(null);
     try {
-      // Critical data — failures block the dashboard.
       const [contentRes, collectionsRes] = await Promise.all([
-        api.get<ContentResponse>("/api/v1/content"),
+        api.get<ContentResponse>("/api/v1/content", { params: { limit: 100 } }),
         api.get<CollectionsResponse>("/api/v1/collections"),
       ]);
       if (requestId !== requestIdRef.current) return;
-
-      const items = contentRes.data.content ?? [];
-      setContents(items);
+      setContents(contentRes.data.content ?? []);
       setNextCursor(contentRes.data.nextCursor ?? null);
       setCollections(collectionsRes.data.collections ?? []);
-
-      // Counts are supplementary (sidebar badges) — fetch separately so a
-      // missing or failing endpoint never crashes the dashboard.
-      api
-        .get<CountsResponse>("/api/v1/content/counts")
-        .then((res) => {
-          if (requestId !== requestIdRef.current) return;
-          setCounts(res.data.counts ?? {});
-        })
-        .catch(() => {
-          if (requestId !== requestIdRef.current) return;
-          // Derive approximate counts from the loaded page as a fallback.
-          const derived: Record<string, number> = {};
-          for (const item of items) {
-            const st = item.sourceType ?? (item.type === "twitter" ? "x" : item.type) ?? "other";
-            derived[st] = (derived[st] ?? 0) + 1;
-          }
-          setCounts(derived);
-        });
+      refreshCounts();
     } catch (err) {
       if (requestId !== requestIdRef.current) return;
-      console.error("Error fetching content:", err);
       setError(normalizeError(err));
     } finally {
       if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, []);
+  }, [refreshCounts]);
 
   const loadMore = useCallback(async () => {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
     try {
       const response = await api.get<ContentResponse>("/api/v1/content", {
-        params: { cursor: nextCursor },
+        params: { cursor: nextCursor, limit: 100 },
       });
       setContents((prev) => [...prev, ...(response.data.content ?? [])]);
       setNextCursor(response.data.nextCursor ?? null);
     } catch (err) {
-      console.error("Error loading more content:", err);
       setError(normalizeError(err));
     } finally {
       setLoadingMore(false);
     }
   }, [nextCursor, loadingMore]);
+
+  /** Swap in a server-updated item without refetching the board. */
+  const upsertItem = useCallback(
+    (item: Content) => {
+      setContents((prev) => {
+        const i = prev.findIndex((c) => c._id === item._id);
+        if (i === -1) return [item, ...prev];
+        const next = prev.slice();
+        next[i] = item;
+        return next;
+      });
+      refreshCounts();
+    },
+    [refreshCounts]
+  );
 
   useEffect(() => {
     refresh();
@@ -137,8 +159,11 @@ export function useContent() {
   return {
     contents,
     collections,
-    counts,
+    counts: meta.counts,
+    meta,
     refresh,
+    refreshCounts,
+    upsertItem,
     loadMore,
     hasMore: Boolean(nextCursor),
     loading,

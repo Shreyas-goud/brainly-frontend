@@ -1,14 +1,21 @@
 import { useState } from "react";
+import { ArrowUpRight, CalendarClock, Check, Copy, Quote, Trash2 } from "lucide-react";
 import { api, normalizeError } from "../lib/api";
 import { useConfirm } from "./ConfirmDialog";
 import { TweetCard } from "./TweetCard";
 import { InstagramCard } from "./InstagramCard";
 import { LinkPreviewCard } from "./LinkPreviewCard";
+import { Video } from "./VideoPlayer";
 import { GitHubCard } from "./GitHubCard";
 import { RedditCard } from "./RedditCard";
 import { getChannelConfig } from "../lib/channels";
-import { normalizeSourceType } from "../lib/urlDetector";
-import { type Tag, type OgData } from "../hooks/useContent";
+import { normalizeSourceType, type SourceType } from "../lib/urlDetector";
+import { hostnameOf } from "../lib/format";
+import { cn } from "../lib/cn";
+import { SourceIcon } from "./ui/SourceIcon";
+import { IconButton } from "./ui/Button";
+import { type Tag, type OgData, type Content } from "../hooks/useContent";
+import { dayLabel } from "../lib/recall";
 
 interface CardProps {
   _id?: string;
@@ -25,13 +32,55 @@ interface CardProps {
   selectionMode?: boolean;
   selected?: boolean;
   onToggleSelect?: (id: string) => void;
+  /** The full item, for recall details (intent, note, plan, status). */
+  item?: Content;
+  /** Opens the item's detail sheet. */
+  onOpen?: () => void;
 }
 
-const getYouTubeEmbedUrl = (url: string) => {
-  const match = url.match(/^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/);
-  const videoId = match?.[2]?.length === 11 ? match[2] : null;
-  return videoId ? `https://www.youtube.com/embed/${videoId}` : url;
-};
+function youTubeId(url: string): string | null {
+  const match = url.match(/^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|shorts\/|watch\?v=|&v=)([^#&?]*).*/);
+  return match?.[2]?.length === 11 ? match[2] : null;
+}
+
+/** A poster until pressed, so a board of videos doesn't load a board of iframes. */
+function YouTubeEmbed({ url, title }: { url: string; title: string }) {
+  const id = youTubeId(url);
+  if (!id) return <LinkPreviewCard url={url} />;
+  return <Video key={id} source={{ kind: "youtube", id }} title={title} channel="youtube" originalUrl={url} />;
+}
+
+function sourceLabel(sourceType: SourceType, link: string): string {
+  if (sourceType === "other" || sourceType === "email" || sourceType === "chat") return hostnameOf(link);
+  return getChannelConfig(sourceType).label;
+}
+
+export function CardBody({
+  sourceType,
+  link,
+  title,
+  ogData,
+}: {
+  sourceType: SourceType;
+  link: string;
+  title: string;
+  ogData?: OgData | null;
+}) {
+  switch (sourceType) {
+    case "youtube":
+      return <YouTubeEmbed url={link} title={title} />;
+    case "x":
+      return <TweetCard url={link} />;
+    case "github":
+      return <GitHubCard url={link} ogData={ogData} />;
+    case "instagram":
+      return <InstagramCard url={link} ogData={ogData} />;
+    case "reddit":
+      return <RedditCard url={link} ogData={ogData} />;
+    default:
+      return <LinkPreviewCard url={link} ogData={ogData} />;
+  }
+}
 
 export function Card({
   _id,
@@ -46,20 +95,22 @@ export function Card({
   selectionMode,
   selected,
   onToggleSelect,
+  item,
+  onOpen,
 }: CardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const confirm = useConfirm();
 
-  const sourceType = normalizeSourceType({ type, sourceType: sourceTypeProp as never });
-  const channel = getChannelConfig(sourceType);
-  const Icon = channel.Icon;
+  const sourceType = normalizeSourceType({ type, sourceType: sourceTypeProp as SourceType | null });
+  const isSelectable = Boolean(selectionMode && _id);
 
   async function handleDelete() {
     if (!_id || isDeleting) return;
     const ok = await confirm({
       title: "Remove from your brain?",
-      message: `"${title}" will be permanently removed.`,
+      message: `“${title}” will be permanently removed.`,
       confirmText: "Remove",
       destructive: true,
     });
@@ -71,144 +122,145 @@ export function Card({
       onDelete?.();
     } catch (err) {
       setActionError(normalizeError(err).message);
-    } finally {
       setIsDeleting(false);
     }
   }
 
-  function copyToClipboard() {
-    navigator.clipboard.writeText(link);
+  const finished = Boolean(item?.status && item.status !== "active");
+  const planned = item?.status === "active" && Boolean(item.plannedFor) && new Date(item.plannedFor!).getTime() > Date.now();
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* clipboard blocked: the link is still one click away */
+    }
   }
 
-  const isSelectable = Boolean(selectionMode && _id);
-
   return (
-    <div
-      className={`group relative bg-white rounded-3xl border shadow-sm transition-all duration-300 overflow-hidden flex flex-col ${
-        isDeleting ? "opacity-50 grayscale" : ""
-      } ${
-        selected
-          ? "border-purple-500 ring-2 ring-purple-500"
-          : "border-gray-100 hover:shadow-xl hover:border-purple-100"
-      }`}
+    <article
+      className={cn(
+        "group relative flex flex-col rounded-2xl bg-surface p-4 ring-1 transition-[box-shadow,transform,opacity] duration-300 ease-out",
+        selected ? "ring-2 ring-accent shadow-lift" : "shadow-card ring-line hover:shadow-lift hover:ring-line-strong",
+        isDeleting && "pointer-events-none scale-[0.98] opacity-40"
+      )}
     >
-      {/* Selection overlay */}
       {isSelectable && (
         <button
           type="button"
           onClick={() => onToggleSelect?.(_id!)}
           aria-pressed={selected}
-          aria-label={selected ? "Deselect item" : "Select item"}
-          className={`absolute inset-0 z-20 transition-colors ${
-            selected ? "bg-purple-500/10" : "bg-transparent hover:bg-gray-900/5"
-          }`}
+          aria-label={selected ? `Deselect ${title}` : `Select ${title}`}
+          className={cn(
+            "absolute inset-0 z-20 rounded-2xl transition-colors",
+            selected ? "bg-accent/[0.06]" : "hover:bg-ink/[0.03]"
+          )}
         >
           <span
-            className={`absolute top-4 left-4 w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all ${
-              selected
-                ? "bg-purple-600 border-purple-600 text-white scale-100"
-                : "bg-white/90 border-gray-300 text-transparent"
-            }`}
+            className={cn(
+              "absolute right-3.5 top-3.5 flex size-6 items-center justify-center rounded-full ring-1 ring-inset transition-all duration-200",
+              selected ? "scale-100 bg-accent text-white ring-accent" : "scale-95 bg-surface text-transparent ring-line-strong"
+            )}
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
-            </svg>
+            <Check className="size-3.5" strokeWidth={3} />
           </span>
         </button>
       )}
 
-      {/* Card Header */}
-      <div className="p-5 flex justify-between items-start gap-4">
-        <div className="flex items-start gap-3">
-          <div className={`p-2 rounded-xl shrink-0 ${channel.iconBgClass}`}>
-            <Icon />
-          </div>
-          <h3 className="font-bold text-gray-900 leading-tight pt-1">{title}</h3>
-        </div>
-
+      <header className="flex items-center gap-2">
+        <SourceIcon channel={sourceType} size="xs" />
+        <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-ink-3">{sourceLabel(sourceType, link)}</span>
         {!readOnly && !selectionMode && (
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={copyToClipboard}
-              className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
-              title="Copy Link"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-              </svg>
-            </button>
-            <button
-              onClick={handleDelete}
-              disabled={isDeleting}
-              className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-              title="Delete"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
+          <div className="-my-1 -mr-1.5 flex items-center opacity-100 transition-opacity duration-200 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-focus-within:opacity-100 [@media(hover:hover)]:group-hover:opacity-100">
+            <IconButton label={copied ? "Copied" : "Copy link"} size="sm" onClick={copyLink}>
+              {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
+            </IconButton>
+            <IconButton label="Delete" size="sm" tone="danger" onClick={handleDelete}>
+              <Trash2 className="size-3.5" />
+            </IconButton>
           </div>
         )}
-      </div>
+        <a
+          href={link}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={`Open ${title}`}
+          className={cn(
+            "-my-1 flex size-7 items-center justify-center rounded-lg text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink",
+            !readOnly && !selectionMode ? "-mr-1.5" : "-mr-1",
+            selectionMode && "invisible"
+          )}
+        >
+          <ArrowUpRight className="size-4" />
+        </a>
+      </header>
 
-      {/* Inline action error (e.g. a failed delete) — replaces a blocking alert() */}
+      {onOpen ? (
+        <button type="button" onClick={onOpen} className="mb-3 mt-2.5 block text-left">
+          <h3 className="line-clamp-3 text-[15px] font-semibold leading-snug tracking-[-0.01em] text-ink text-pretty decoration-line-strong underline-offset-4 hover:underline">
+            {title}
+          </h3>
+        </button>
+      ) : (
+        <h3 className="mb-3 mt-2.5 line-clamp-3 text-[15px] font-semibold leading-snug tracking-[-0.01em] text-ink text-pretty">
+          {title}
+        </h3>
+      )}
+
+      {item?.note && (
+        <p className="mb-3 flex gap-1.5 text-[13px] leading-relaxed text-ink-2">
+          <Quote className="mt-0.5 size-3 shrink-0 text-ink-3" />
+          <span className="line-clamp-2">{item.note}</span>
+        </p>
+      )}
+
       {actionError && (
-        <div className="mx-5 mb-3 flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-100 text-red-700 text-xs">
+        <div className="mb-3 flex items-center justify-between gap-2 rounded-lg bg-danger-soft px-3 py-2 text-xs text-danger">
           <span className="min-w-0 truncate">{actionError}</span>
-          <button
-            onClick={() => setActionError(null)}
-            className="shrink-0 font-semibold hover:text-red-800"
-          >
+          <button onClick={() => setActionError(null)} className="shrink-0 font-semibold">
             Dismiss
           </button>
         </div>
       )}
 
-      {/* Card Body — renderer chosen by sourceType */}
-      <div className="px-5 pb-5 flex-1">
-        {sourceType === "youtube" && (
-          <div className="rounded-2xl overflow-hidden bg-gray-50 border border-gray-50">
-            <iframe
-              className="w-full aspect-video"
-              src={getYouTubeEmbedUrl(link)}
-              title="YouTube video player"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-              loading="lazy"
-            />
-          </div>
-        )}
-        {sourceType === "x" && <TweetCard url={link} />}
-        {sourceType === "github" && <GitHubCard url={link} ogData={ogData} />}
-        {sourceType === "instagram" && <InstagramCard url={link} ogData={ogData} />}
-        {sourceType === "reddit" && <RedditCard url={link} ogData={ogData} />}
-        {sourceType !== "youtube" &&
-          sourceType !== "x" &&
-          sourceType !== "github" &&
-          sourceType !== "instagram" &&
-          sourceType !== "reddit" && (
-            <LinkPreviewCard url={link} ogData={ogData} />
-          )}
+      <div className="min-w-0">
+        <CardBody sourceType={sourceType} link={link} title={title} ogData={ogData} />
       </div>
 
-      {/* Card Footer */}
-      <div className="px-5 py-3 bg-gray-50/50 border-t border-gray-50 flex items-center gap-2 overflow-x-auto scrollbar-hide">
-        <span
-          className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 border rounded-md shrink-0 ${channel.badgeClass}`}
-        >
-          {channel.label}
-        </span>
-        <div className="flex gap-2">
-          {tags?.map((tag) => (
+      {(finished || planned || (tags && tags.length > 0)) && (
+        <footer className="mt-3.5 flex flex-wrap items-center gap-1.5">
+          {finished && (
             <span
-              key={tag._id}
-              className="text-[10px] font-bold uppercase tracking-wider text-purple-600 px-2 py-1 bg-purple-50 border border-purple-100 rounded-md whitespace-nowrap"
+              className={cn(
+                "inline-flex h-5 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium",
+                item?.status === "done" ? "bg-success/10 text-success" : "bg-surface-2 text-ink-3"
+              )}
             >
-              {tag.name}
+              {item?.status === "done" ? (
+                <>
+                  <Check className="size-3" />
+                  Done
+                </>
+              ) : (
+                "Archived"
+              )}
+            </span>
+          )}
+          {planned && item?.plannedFor && (
+            <span className="inline-flex h-5 items-center gap-1 rounded-md bg-surface-2 px-1.5 text-[11px] text-ink-2">
+              <CalendarClock className="size-3" />
+              {dayLabel(item.plannedFor)}
+            </span>
+          )}
+          {tags?.map((tag) => (
+            <span key={tag._id} className="rounded-md bg-surface-2 px-1.5 py-0.5 text-xs text-ink-2">
+              #{tag.name}
             </span>
           ))}
-        </div>
-      </div>
-    </div>
+        </footer>
+      )}
+    </article>
   );
 }

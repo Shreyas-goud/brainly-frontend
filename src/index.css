@@ -2,6 +2,163 @@
 @tailwind components;
 @tailwind utilities;
 
-html {
-  scroll-behavior: smooth;
+/* Colour tokens are RGB channel triples so Tailwind opacity modifiers work. */
+@layer base {
+  :root {
+    --bg: 246 245 241;
+    --surface: 255 255 255;
+    --surface-2: 240 239 234;
+    --surface-3: 230 228 221;
+    --ink: 18 18 17;
+    --ink-2: 84 83 77;
+    --ink-3: 111 109 102;
+    --line: 228 226 219;
+    --line-strong: 211 208 199;
+    --accent: 106 76 245;
+    --accent-ink: 82 54 222;
+    --accent-soft: 238 234 254;
+    --danger: 205 50 37;
+    --danger-soft: 253 236 234;
+    --success: 31 138 76;
+    --inverse: 18 18 17;
+    --inverse-ink: 246 245 241;
+    --shadow: 28 25 18;
+    color-scheme: light;
+  }
+
+  .dark {
+    --bg: 13 13 12;
+    --surface: 22 22 21;
+    --surface-2: 30 30 28;
+    --surface-3: 41 41 38;
+    --ink: 242 241 236;
+    --ink-2: 171 169 161;
+    --ink-3: 138 136 128;
+    --line: 39 39 36;
+    --line-strong: 54 54 50;
+    --accent: 146 125 255;
+    --accent-ink: 182 168 255;
+    --accent-soft: 40 34 70;
+    --danger: 255 112 96;
+    --danger-soft: 58 26 22;
+    --success: 74 196 125;
+    --inverse: 242 241 236;
+    --inverse-ink: 13 13 12;
+    --shadow: 0 0 0;
+    color-scheme: dark;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-bg text-ink font-sans;
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  ::selection {
+    background: rgb(var(--accent) / 0.22);
+    color: rgb(var(--ink));
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  input,
+  textarea {
+    caret-color: rgb(var(--accent));
+  }
+
+  a {
+    text-underline-offset: 3px;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--line-strong)) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: rgb(var(--line-strong));
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* Lenis drives the landing page; native smooth scrolling would fight it. */
+  html.lenis,
+  html.lenis body {
+    height: auto;
+  }
+
+  .lenis.lenis-smooth {
+    scroll-behavior: auto !important;
+  }
+
+  .lenis.lenis-stopped {
+    overflow: hidden;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      rgb(var(--surface-2)) 0%,
+      rgb(var(--surface-3)) 50%,
+      rgb(var(--surface-2)) 100%
+    );
+    background-size: 200% 100%;
+    @apply animate-shimmer;
+  }
+
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .text-pretty {
+    text-wrap: pretty;
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  .press {
+    @apply transition-transform duration-150 ease-out active:scale-[0.97];
+  }
 }

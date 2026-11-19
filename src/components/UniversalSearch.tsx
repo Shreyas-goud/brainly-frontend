@@ -1,5 +1,12 @@
-import { useState, useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ArrowUpRight, CornerDownLeft, Search } from "lucide-react";
 import { type Content } from "../hooks/useContent";
+import { Dialog } from "./ui/Dialog";
+import { SourceIcon } from "./ui/SourceIcon";
+import { Kbd } from "./ui/Spinner";
+import { normalizeSourceType } from "../lib/urlDetector";
+import { hostnameOf } from "../lib/format";
+import { cn } from "../lib/cn";
 
 interface UniversalSearchProps {
   open: boolean;
@@ -7,89 +14,174 @@ interface UniversalSearchProps {
   contents: Content[];
 }
 
-// Simple fuzzy search function
-function fuzzyMatch(pattern: string, text: string): boolean {
-  pattern = pattern.toLowerCase();
-  text = text.toLowerCase();
-  let patternIndex = 0;
-  let textIndex = 0;
-
-  while (patternIndex < pattern.length && textIndex < text.length) {
-    if (pattern[patternIndex] === text[textIndex]) {
-      patternIndex++;
+/** Subsequence match that also reports which characters matched, for highlighting. */
+export function fuzzyIndices(pattern: string, text: string): number[] | null {
+  const p = pattern.toLowerCase().replace(/\s+/g, "");
+  if (!p) return [];
+  const t = text.toLowerCase();
+  const hits: number[] = [];
+  let pi = 0;
+  for (let ti = 0; ti < t.length && pi < p.length; ti++) {
+    if (t[ti] === p[pi]) {
+      hits.push(ti);
+      pi++;
     }
-    textIndex++;
   }
+  return pi === p.length ? hits : null;
+}
 
-  return patternIndex === pattern.length;
+/** Contiguous matches score higher, so "rust" beats "r…u…s…t". */
+function score(hits: number[]): number {
+  let s = 0;
+  for (let i = 1; i < hits.length; i++) if (hits[i] === hits[i - 1] + 1) s += 2;
+  return s - (hits[0] ?? 0) * 0.05;
+}
+
+export function Highlight({ text, hits }: { text: string; hits: number[] }) {
+  if (hits.length === 0) return <>{text}</>;
+  const set = new Set(hits);
+  const out: ReactNode[] = [];
+  let buf = "";
+  let inHit = false;
+  for (let i = 0; i < text.length; i++) {
+    const h = set.has(i);
+    if (h !== inHit && buf) {
+      out.push(inHit ? <mark key={i} className="rounded-sm bg-accent/15 text-accent-ink">{buf}</mark> : buf);
+      buf = "";
+    }
+    inHit = h;
+    buf += text[i];
+  }
+  if (buf) out.push(inHit ? <mark key="end" className="rounded-sm bg-accent/15 text-accent-ink">{buf}</mark> : buf);
+  return <>{out}</>;
 }
 
 export function UniversalSearch({ open, onClose, contents }: UniversalSearchProps) {
-  const [searchQuery, setSearchQuery] = useState("");
+  const [query, setQuery] = useState("");
+  const [active, setActive] = useState(0);
+  const listRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
     if (open) {
-      setSearchQuery("");
+      setQuery("");
+      setActive(0);
     }
   }, [open]);
 
-  const filteredContents = useMemo(() => {
-    if (!searchQuery) {
-      return contents;
+  const results = useMemo(() => {
+    if (!query.trim()) return contents.slice(0, 50).map((item) => ({ item, hits: [] as number[], s: 0 }));
+    const out: { item: Content; hits: number[]; s: number }[] = [];
+    for (const item of contents) {
+      const titleHits = fuzzyIndices(query, item.title);
+      if (titleHits) {
+        out.push({ item, hits: titleHits, s: score(titleHits) + 5 });
+        continue;
+      }
+      const linkHits = fuzzyIndices(query, item.link);
+      if (linkHits) out.push({ item, hits: [], s: score(linkHits) });
     }
-    return contents.filter(
-      (item) =>
-        fuzzyMatch(searchQuery, item.title) || fuzzyMatch(searchQuery, item.link)
-    );
-  }, [contents, searchQuery]);
+    return out.sort((a, b) => b.s - a.s).slice(0, 50);
+  }, [contents, query]);
 
-  if (!open) return null;
+  useEffect(() => setActive(0), [query]);
+
+  useEffect(() => {
+    listRef.current?.querySelector<HTMLElement>(`[data-index="${active}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [active]);
+
+  function openItem(item: Content) {
+    window.open(item.link, "_blank", "noopener,noreferrer");
+    onClose();
+  }
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive((i) => Math.min(i + 1, results.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const hit = results[active];
+      if (hit) openItem(hit.item);
+    }
+  }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center p-4 sm:p-6 pt-[15vh]">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-300"
-        onClick={onClose}
-      />
-
-      {/* Modal */}
-      <div className="relative bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 slide-in-from-top-4 duration-300">
-        <div className="p-4 border-b border-gray-100 flex items-center">
+    <Dialog open={open} onClose={onClose} size="xl" placement="top" label="Search your brain">
+      <div onKeyDown={onKeyDown}>
+        <div className="flex items-center gap-3 border-b border-line px-5">
+          <Search className="size-[18px] shrink-0 text-ink-3" />
           <input
+            data-autofocus
             type="text"
-            placeholder="Search your brain..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-transparent border-none outline-none text-lg placeholder-gray-400"
-            autoFocus
+            role="combobox"
+            aria-expanded="true"
+            aria-controls="search-results"
+            aria-activedescendant={results[active] ? `search-option-${active}` : undefined}
+            placeholder="Search titles and links…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="h-14 w-full bg-transparent text-[16px] text-ink outline-none placeholder:text-ink-3"
           />
+          <Kbd>esc</Kbd>
         </div>
 
-        <div className="p-2 max-h-[50vh] overflow-y-auto">
-          {filteredContents.length > 0 ? (
-            <ul>
-              {filteredContents.map((item) => (
+        <ul id="search-results" role="listbox" ref={listRef} className="max-h-[min(56vh,460px)] overflow-y-auto p-2">
+          {results.length === 0 ? (
+            <li className="px-4 py-12 text-center">
+              <p className="text-sm font-medium text-ink">Nothing matches “{query}”</p>
+              <p className="mt-1 text-[13px] text-ink-3">Try fewer letters, or part of the link.</p>
+            </li>
+          ) : (
+            results.map(({ item, hits }, index) => {
+              const source = normalizeSourceType(item);
+              const isActive = index === active;
+              return (
                 <li
                   key={item._id ?? item.link}
-                  className="p-3 hover:bg-gray-100 rounded-lg cursor-pointer"
-                  onClick={() => {
-                    window.open(item.link, "_blank");
-                    onClose();
-                  }}
+                  id={`search-option-${index}`}
+                  role="option"
+                  aria-selected={isActive}
+                  data-index={index}
+                  onMouseMove={() => setActive(index)}
+                  onClick={() => openItem(item)}
+                  className={cn(
+                    "flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5",
+                    isActive ? "bg-surface-2" : ""
+                  )}
                 >
-                  <div className="font-semibold text-gray-800">{item.title}</div>
-                  <div className="text-sm text-gray-500 truncate">{item.link}</div>
+                  <SourceIcon channel={source} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[14px] font-medium text-ink">
+                      <Highlight text={item.title} hits={hits} />
+                    </p>
+                    <p className="truncate text-xs text-ink-3">{hostnameOf(item.link)}</p>
+                  </div>
+                  <ArrowUpRight className={cn("size-4 shrink-0 text-ink-3", isActive ? "opacity-100" : "opacity-0")} />
                 </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="text-center p-8 text-gray-500">
-              No results found.
-            </div>
+              );
+            })
           )}
+        </ul>
+
+        <div className="flex items-center gap-4 border-t border-line bg-surface-2/50 px-5 py-2.5 text-xs text-ink-3">
+          <span className="inline-flex items-center gap-1.5">
+            <Kbd>↑</Kbd>
+            <Kbd>↓</Kbd> to move
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Kbd>
+              <CornerDownLeft className="size-3" />
+            </Kbd>
+            to open
+          </span>
+          <span className="ml-auto tnum">
+            {results.length} of {contents.length}
+          </span>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }
